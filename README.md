@@ -35,8 +35,11 @@ Debian/Ubuntu linux:
 # Changes
 
 * 0.7.2	Published on GitHub
+
 	Name and function prefix changed to the shorter “io”
+	
 	Exceptions thrown on all failures
+	
 	Parameter interpretation strategy loosed towards best guess and reasonable defaults, rather than failing.
 		
 
