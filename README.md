@@ -49,4 +49,7 @@ Help is needed to:
 - Create a windows compatible version of the library
 - Create a better test environment
 - Bring code and documentation up to version 1.0 level.
+- Create USB functions
+- Create HID functions
+
 
