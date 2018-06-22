@@ -1,5 +1,5 @@
 # PHP-IO
-PHP extension for direct access to operating system I/O drivers 
+PHP extension for direct access to operating system I/O drivers
 
 Features:
 - Operate on file descriptors
@@ -8,7 +8,7 @@ Features:
 
 PHP is fast becoming an important language in unexpected areas, primary do to the gentle learning curve and versatility. However it lacks access to lower level I/O functions, to be fully useful with embedded  programming and IOT. This package is an attempt to remedy that.
 
-#Install
+# Install
 Currently only compiles under unix.
 
 Debian/Ubuntu linux:
@@ -16,9 +16,9 @@ Debian/Ubuntu linux:
     sudo make install
 
 
-#Functions:
+# Functions:
 
-##Basics:
+## Basics:
 - io_open: Open device or file with file descriptor
 - io_close: Close file descriptor
 - io_read: Read fromk device
@@ -39,7 +39,7 @@ Debian/Ubuntu linux:
 	Exceptions thrown on all failures.
 	Parameter interpretation strategy loosed towards best guess and reasonable defaults, rather than failing.
 	testing is currently only performed on debian linux.
-		
+
 
 # Help
 I really appreciate all kinds of contribution.
@@ -55,5 +55,3 @@ Things that needs doing is:
 - Bring code and documentation up to production level.
 - Create USB functions
 - Create HID functions
-
-
