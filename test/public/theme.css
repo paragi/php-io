@@ -1,0 +1,398 @@
+/*==============================================================================
+   Adjust sizes acording to view port size 
+
+   Set tile size to fit about 4 tiles on the smalest side on a normal sized 
+   viewport. Decrease number when aspect ratio becomes more unusual. 
+   
+==============================================================================*/
+
+/*   Default values for aspect ratio less than 1/3  (horisontal/vertical)
+*/
+:root { --module-size : 90vw; --module-shadow: 9vw;}
+*{font-size: 8vmin;}
+
+@media (min-aspect-ratio:1/3){ 
+  :root {--module-size: 45vw; --module-shadow: 4vw; }
+  *{font-size: 8vw;}
+}  
+
+@media (min-aspect-ratio:1/2){ 
+  :root {--module-size: 22vmin; --module-shadow: 2vmin; }
+  *{font-size: 4vmin;}
+}  
+@media (min-aspect-ratio:2/1){ 
+  :root {--module-size: 45vh; --module-shadow: 4vh; }
+  *{font-size: 8vh;}
+}  
+@media (min-aspect-ratio:4/1){ 
+  :root {--module-size: 90vh; --module-shadow: 9vh; }
+  *{font-size: 15vh;}
+}  
+
+/*=============================================================================
+  Basics
+  ============================================================================*/
+html {
+	height:100%;
+}
+
+*{
+	color: #FFEDBA;
+	border-color: #FFEDBA;
+	border-color: #FFEDBA;
+  font-family: serif, Times,"Times New Roman" ;
+}
+
+body{
+	margin: 0px;
+	background-color: #220533;
+	center fixed;
+  background-size: cover;
+	inner-height:100%;
+  opacity: 1.0;
+  transition: opacity 1s ease-in-out;
+  transition: background-color 1s ease-in-out;
+  -webkit-transition: background-color 1s ease-in-out;
+}
+
+.body-off-line{
+  transition: opacity 1s ease-in-out;
+  opacity: 0.4;
+}
+
+canvas{
+  width: inherit;
+  height: inherit;
+  top:0;
+  left:0;  
+}
+
+canvas:hover, .tile_content:hover, .tile:hover{
+	background-color:rgba(240,217,136,0.2);
+	cursor:pointer;
+}
+table td{ padding-right:5px;}
+table th{ text-align:left;}
+table tr:nth-child(even) {
+	background-color:rgba(240,217,136,0.2);
+}
+table .sel{
+	background-color:rgba(50,10,10,0.5);
+}
+table .sel:hover{
+	background-color:rgba(240,217,136,0.5);
+	cursor:pointer;
+}
+
+input, select, textarea, div[contenteditable]{
+	border: 2px solid #f0d988;
+	padding: 1px;
+	margin: 3px;
+	border-radius:5px;
+	vertical-align: top;
+	background-color: #460918;
+	border-collapse: collapse;
+}
+
+button{
+	border: 2px solid #460918;
+	padding: 1px;
+	margin: 3px;
+	border-radius:5px;
+	vertical-align: top;
+	background-color: #f0d988;
+  color: #460918;
+	border-collapse: collapse;
+	cursor:pointer;
+}
+button:disabled {
+	background-color: #987;
+}
+hr{border-color:#f0d988;}
+
+/*=============================================================================
+  Panel
+  ============================================================================*/
+.panel{
+	top: 0px;
+	right: 0px;
+  height: calc(var(--module-size) * 1.04); 
+	width: 100vw;
+	position: 	static;
+	padding: 3px;
+	overflow: hidden;
+	box-shadow: inset 0px 0px 20px black;
+	box-shadow: 10px 0px 10px black;
+	margin-bottom: 10px;
+	background-color:rgba(50,10,10,0.5);
+  display: flex;
+  flex-wrap: wrap;
+  flex-flow: flex-start;
+  align-content: flex-start;
+  align-items:  flex-start;
+  justify-content: space-around;
+  background-size:100% 100%;
+  max-width: 100%;
+}
+
+.panel .tile{
+  justify-content: flex-end;
+}
+
+.tile_mark{
+  align-self: flex-end;
+  width:40%; 
+  height:40%;
+  background-color:rgba(0,0,0,0);
+}
+
+.talk{
+  position: relative;
+  width: 40vw;
+  height: var(--module-size);
+  margin: 0.7%;
+	border: 1px solid #f0d988;
+	padding:3px;
+	border-radius: 2vh; 
+  box-shadow: inset 0px 0px var(--module-shadow) rgba(0,0,0,1); 
+	background: radial-gradient(#790,#570,#000);
+  overflow: hidden;
+  background-size:100% 100%;
+  box-sizing: border-box;
+  transition: opacity 1s ease-in-out;
+}
+
+.talk-input{
+  width:100%;
+  outline: none;  
+	border:0px;
+	background-color:rgba(0,0,0,0);	
+  font-family: Inconsolata, monospace;
+  font-size: 50%;
+  cursor:url(/theme/say.png),auto;
+}
+
+.talk-output{
+  width:100%;
+  height: 75%;
+  max-height: 75%;
+  top:0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  outline: none;  
+	border:0px;
+  font-family: Inconsolata, monospace;
+  font-size: 50%;
+	overflow-x: hidden;
+	overflow-y: scroll;
+	white-space: pre-wrap; 
+}
+
+.talk-output::-webkit-scrollbar {
+  width:1%;
+  background:transparent;
+}
+.talk-output::-webkit-scrollbar-track {
+  background:transparent;
+}
+.talk-output::-webkit-scrollbar-thumb {
+  background:#570;
+}
+
+.talk-computer{
+  width: 100%;
+  font:inherit;
+  color: #0af;
+}
+
+.talk-computer-error{
+  width: 100%;
+  font:inherit;
+  color: #e71;
+}
+
+.talk-user{
+  width: 100%;
+  font:inherit;
+}
+
+.talk-monitor{
+  width: 10%;
+  position:absolute;
+  bottom:1%;
+  right:2%;
+  overflow: hidden;
+	border: 1px solid #f0d988;
+	padding:0px;
+	border-radius: 1vh; 
+}
+
+/*=============================================================================
+  Main content and misceleneous
+  ============================================================================*/
+.main_container{
+  display: flex;
+  flex-wrap: wrap;
+  flex-flow: center;
+  box-sizing: border-box;
+  align-content: center;
+  justify-content: space-around;
+ 	margin: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+.footer{
+	bottom: 0px;
+	right: 0px;
+}
+
+.withhoverbox {cursor:pointer;}
+
+.flex_break{
+  margin: 0;
+  width: 100%;
+  page-break-after: always; /* CSS 2.1 syntax */
+  break-after: always; /* New syntax */
+}
+/*=============================================================================
+   Tile
+  ============================================================================*/
+.tile{
+  position:relative; 
+  margin: 0.7%;
+  width: var(--module-size); 
+  height: var(--module-size); 
+  min-width: var(--module-size); 
+  min-height: var(--module-size); 
+  box-shadow: inset 0px 0px var(--module-shadow) rgba(0,0,0,1);
+  border: 1px solid #f0d988;
+	padding:3px;
+	border-radius: 2vh; 
+  background-color:rgba(50,10,10,0.5);
+  background-size:contain; 
+  background-repeat:no-repeat;
+  box-sizing: border-box;
+  transition: opacity 1s ease-in-out;
+  overflow: hidden;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center; /* vertical */ 
+  justify-content: center;
+  text-align: center; 
+}
+
+.tile_content{
+  display: flex; 
+  flex-wrap: wrap; 
+  align-items: center; /* vertival */ 
+  align-self: flex-end ; /* Align this at the buttom of the tile */
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  margin: 2%;
+  overflow: hidden;
+  border-bottom-right-radius: 2vh;
+  border-bottom-left-radius: 2vh;
+  text-align: center; 
+}
+
+.tile_flag{
+  position:absolute; 
+  right: 0;
+  bottom:0;      
+  overflow: hidden;
+  width: 40%;
+  height:40%;
+  background-color:rgba(0,0,0,0);
+}
+
+.tile p{
+  mix-blend-mode: difference;
+}
+
+.container{
+	border:2px solid #f0d988;
+	padding:3px;
+	border-radius:10px;
+	background-color:#400070;
+	background-repeat: no-repeat;
+	background-size: cover;
+	box-shadow: 3px 3px 3px #291b2c;
+	box-sizing: border-box;
+	float:left;
+	margin: 1%;
+	display: flex;
+  flex-wrap: wrap;
+  white-space: pre-wrap; 
+  word-wrap: break-word; 
+  max-width: 97%;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/*=============================================================================
+  Set alerts 
+  =============================================================================*/
+@keyframes yellow_alert {
+    0%  { background-color: #FA0;}
+    50%  { background-color: #730;}
+}
+@-webkit-keyframes yellow_alert{
+    0%  { background-color: #FA0;}
+    50%  { background-color: #730;}
+}
+.yellow_alert{
+ 	background-image: url('');
+  animation: yellow_alert 1s infinite;
+  -webkit-animation: yellow_alert 1s infinite;
+	background-color: #FA0;
+}
+
+@keyframes red_alert {
+    0%  { background-color: #F00;}
+    50%  { background-color: #700;}
+}
+@-webkit-keyframes red_alert{
+    0%  { background-color: #F00;}
+    50%  { background-color: #700;}
+}
+.red_alert{
+ 	background-image: url('');
+  animation: red_alert 1s infinite;
+  -webkit-animation: red_alert 1s infinite;
+	background-color: #FF0000;
+}
+
+@keyframes green_alert {
+    0%  { background-color: #070;}
+    50%  { background-color: #4E0;}
+}
+@-webkit-keyframes green_alert{
+    0%  { background-color: #070;}
+    50%  { background-color: #4E0;}
+}
+.green_alert{
+ 	background-image: url('');
+  animation: green_alert 1s infinite;
+  -webkit-animation: green_alert 1s infinite;
+	background-color: #070;
+}
+
+@keyframes blue_alert {
+    0%  { background-color: #04F;}
+    50%  { background-color: #007;}
+}
+@-webkit-keyframes blue_alert{
+    0%  { background-color: #04F;}
+    50%  { background-color: #007;}
+}
+.blue_alert{
+ 	background-image: url('');
+  animation: blue_alert 1s infinite;
+  -webkit-animation: blue_alert 1s infinite;
+	background-color: #04F;
+}
+
+

@@ -1,0 +1,2 @@
+DOC_ROOT=$(dirname "$0")/public
+php -S localhost:8080 -t $DOC_ROOT

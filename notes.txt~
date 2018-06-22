@@ -1,0 +1,45 @@
+git add .
+git commit -m <message>
+git push
+eller
+git push --set-upstream --force sphp master
+npm publish
+
+
+------------------------------------------------
+git init
+git config --global user.name paragi
+git config --global user.email simon.riget@gmail.com
+
+
+git remote add timexe https://github.com/paragi/timexe.git
+git push --set-upstream timexe master
+
+
+git add .
+git commit -a -m <message>
+
+
+git push --set-upstream --force sphp master
+
+
+sudo ln -s /usr/bin/nodejs /usr/bin/node
+
+npm set init.author.name "paragi"
+npm set init.author.email "simon.riget@gmail.com"
+npm adduser
+npm init
+
+npm publish
+
+---
+To update
+Change version in package.json
+
+git add .
+git commit -m <message>
+git push 
+npm publish
+
+
+

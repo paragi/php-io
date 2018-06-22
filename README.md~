@@ -47,12 +47,12 @@ I really appreciate all kinds of contribution.
 Don't hesitate to submit an issue on github. But please provide a reproducible example.
 
 Code should look good and compact, and be covered by a test case or example where posible.
-Please don't change the formatting style laid out, without a very good reason.
+Please don't change the formatting style laid out, without a good reason.
 
 Things that needs doing is:
 - Create a windows compatible version of the library
 - Create a better test environment
-- Bring code and documentation up to production level.
+- Bring code and documentation up to version 1.0 level.
 - Create USB functions
 - Create HID functions
 
