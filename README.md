@@ -10,11 +10,29 @@ PHP is fast becoming an important language in unexpected areas, primary do to th
 
 # Install
 Currently only compiles under unix.
+### Debian/Ubuntu linux:
 
-Debian/Ubuntu linux:
+Install PHPCPP following instructions here: http://www.php-cpp.com/documentation/install
 
     sudo make install
 
+
+### Raspberry PI/raspberian
+
+    On older versions than 9.0 (Debian stretch):
+    if possible, upgrade to 9.0. otherwise install PHP7 packagers  with dotdeb repository or manually.
+
+    sudo apt-get install php7.0-device
+    git clone https://github.com/CopernicaMarketingSoftware/PHP-CPP.git
+    cd PHP-CPP
+    make
+    sudo make install
+
+    cd ..
+    git clone https://github.com/paragi/PHP-IO.git
+    cd PHP-IO
+    make
+    sudo make install
 
 # Functions:
 
@@ -27,7 +45,7 @@ Debian/Ubuntu linux:
 ## Serial:
 - io_set_serial: get/set subset of serial port settings: speed bit format, hard and soft flow control.
 
-## Generel:
+## Controle:
 - io_ioctl: Driver specific control function for common interfaces.
 - io_ioctl_raw: Driver specific binary control function access. (Not in Safe_mode)
 

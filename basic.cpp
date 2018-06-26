@@ -49,7 +49,7 @@
 #include <linux/msdos_fs.h>
 #include <linux/netrom.h>
 #include <linux/mtio.h>
-#include <linux/wireless.h>
+//#include <linux/wireless.h>
 //#include <linux/sbpcd.h>
 #include <linux/scc.h>
 #include <scsi/scsi.h>
@@ -90,7 +90,7 @@ int str2flags(string strflags){
                 flags &= ~(O_RDONLY | O_WRONLY | O_RDWR | O_APPEND | O_CREAT | O_TRUNC);
                 flags |= O_WRONLY | O_CREAT | O_TRUNC;
                 break;
-            case 'a': // Append or async
+            case 'a': // Append
                 flags &= ~(O_RDONLY | O_WRONLY | O_RDWR | O_APPEND | O_CREAT | O_TRUNC);
                 flags |= O_APPEND | O_CREAT;
                 break;
@@ -108,10 +108,6 @@ int str2flags(string strflags){
                 break;
 
             // Modifiers
-            case 'e':
-                if( i == 0) break;
-                flags |= O_CLOEXEC;
-                break;
             case '+': // read and write
                 if( i == 0) break;
                 flags &= ~(O_RDONLY | O_WRONLY | O_APPEND );
@@ -124,6 +120,10 @@ int str2flags(string strflags){
                 flags |= _O_TEXT;
                 break;
 */
+            case 'e':
+                if( i == 0) break;
+                flags |= O_CLOEXEC;
+                break;
             case 'n':
                 if( i == 0) break;
                 flags |= O_NONBLOCK;
@@ -226,67 +226,51 @@ Php::Value io_open(Php::Parameters &params){
     int flags = 0;
     mode_t mode = 0;
     string error;
-    string path_str;
-    string flags_str;
+    //string path_str;
+    //string flags_str;
 
-    do {
-        if( params.size() < 2 ){
-            error = ": io_open takes at least 2 parameters. "
-                + std::to_string( params.size() )
-                + " was provided"
-            ;
-            break;
-        }
+    if( params.size() < 2 ){
+        throw Php::Exception("io_open takes at least 2 parameters. "
+            + std::to_string( params.size() )
+            + " was provided"
+        );
+    }
 
-        string path_str = params[0];
-        string flags_str = params[1];
+    string path_str = params[0];
+    string flags_str = params[1];
 
-        if( params.size() > 2 )
-            mode = std::stoi(params[2]);
+    if( params.size() > 2 )
+        mode = std::stoi(params[2]);
 
-        flags = str2flags(flags_str);
-        if( flags <= 0 ){
-            error = ": parameter 2 must contain valid flags. '"
-                + flags_str
-                + "' was provided"
-            ;
-            break;
-        }
+    flags = str2flags(flags_str);
+    if( flags <= 0 ){
+        throw Php::Exception(
+            "io_open('" + path_str + "','" + flags_str + "') Failed "
+            + ": parameter 2 must contain valid flags. '"
+            + flags_str
+            + "' was provided"
+        );
+    }
 
-        if( mode > 04777 )
-            mode = 0;
-        if( mode <= 0 && (flags & O_CREAT))
-            mode = 0640;
+    if( mode > 04777 )
+        mode = 0;
+    if( mode <= 0 && (flags & O_CREAT))
+        mode = 0640;
 
-        if( mode > 0){
-            fd = open(path_str.c_str(), flags, mode);
-        }else{
-            fd = open(path_str.c_str(), flags);
-        }
-
-        if(fd < 0){
-            error = "("
-               + std::to_string( fd )
-               + ") : "
-               + string(strerror( errno ))
-            ;
-            break;
-        }
-
-        ret = fd;
-
-    }while(false);
+    if( mode > 0){
+        fd = open(path_str.c_str(), flags, mode);
+    }else{
+        fd = open(path_str.c_str(), flags);
+    }
 
     if(fd < 0){
         throw Php::Exception(
-            "io_open('"
-           + path_str
-           + "','"
-           + flags_str
-           + "') Failed "
-           + error
+            "io_open('" + path_str + "','" + flags_str + "') Failed "
+            + "("
+            + std::to_string( fd )
+            + ") : "
+            + string(strerror( errno ))
         );
-
     }
 
     ret = fd;
@@ -298,10 +282,22 @@ Php::Value io_open(Php::Parameters &params){
 \*============================================================================*/
 Php::Value io_close(Php::Parameters &params){
     Php::Value ret = 0;
-    int fd = std::stoi(params[0]);
-    io_error_string[fd] = "";
-    ret = close(fd);
+    int rc,fd;
 
+    if( params.size() < 1 ){
+        throw Php::Exception( ": io_close takes 1 parameter. None was provided"
+        );
+    }
+
+    fd = std::stoi(params[0]);
+    io_error_string[fd] = "";
+    rc = close(fd);
+    if(rc != 0){
+        throw Php::Exception("io_close failed: "
+           + string(strerror( errno ))
+        );
+    }
+    ret = rc;
     return ret;
 }
 
@@ -314,7 +310,17 @@ Php::Value io_close(Php::Parameters &params){
 \*============================================================================*/
 Php::Value io_write(Php::Parameters &params){
     Php::Value ret = 0;
-    int fd = std::stoi( params[0] );
+    int fd;
+    //string buffer;
+
+    if( params.size() < 2 ){
+        throw Php::Exception("io_write takes 2 parameters. "
+            + std::to_string( params.size() )
+            + " was provided"
+        );
+    }
+
+    fd = std::stoi( params[0] );
     string buffer = params[1];
 
     if(fd < 1 || fd > MAX_OPEN_FILES -1 ) return ret;
@@ -348,7 +354,6 @@ Php::Value io_write(Php::Parameters &params){
   blocking: If timeout is set to -1 (with io_set_serial) io_read wait until $length is reached.
 
 
-
 NB: end_char not implementet
 
 FIONREAD  int *argp
@@ -359,40 +364,46 @@ Php::Value io_read(Php::Parameters &params){
     Php::Value ret = "";
     int fd, length;
     //int end_char = -1;
-    string str;
+    //string str;
+
+    if( params.size() < 2 ){
+            throw Php::Exception("io_read takes at least 2 parameters. "
+            + std::to_string( params.size() )
+            + " was provided"
+        );
+    }
 
     // File descriptor
     fd = std::stoi( params[0] );
-    if(fd < 1 || fd > MAX_OPEN_FILES  -1 ) return ret;
+    if(fd < 1 || fd > MAX_OPEN_FILES -1 ) return ret;
     io_error_string[fd] = "";
 
     // Length
     length = std::stoi( params[1] );
     char * buffer = new char[length +1];
     if(!buffer){
-        io_error_string[fd] = "io_read was unable to allocate memory";
-        return ret;
+        throw Php::Exception("io_read was unable to allocate memory");
     }
 
     // End of message char
     if(params.size() > 2){
         string str = params[2];
-    //    end_char = (int)str[0];
     }
 
     // read from device
     length = read(fd, buffer, length);
 	buffer[length] = 0;
     if(length < 0){
-        io_error_string[fd] = "io_read operation failed. "
+        throw Php::Exception("io_read operation failed. "
             + std::to_string( fd )
             + string(strerror(errno))
-        ;
-        return ret;
+        );
     }
 
-    if(length >0)
-      ret = std::string(buffer, length);
+    if(length > 0){
+        ret = std::string(buffer, length);
+    }
+
     return ret;
 }
 
@@ -424,10 +435,16 @@ Php::Value io_ioctl(Php::Parameters &params){
     Php::Value ret = false;
     int fd = std::stoi( params[0] );
     int command = std::stoi( params[1] );
-    int rc;
+    int rc = -1;
+    int int_buffer;
 
-    if(fd < 1 || fd > MAX_OPEN_FILES -1 ) return ret;
-/*
+    if( params.size() < 2 ){
+            throw Php::Exception("io_ioctl takes at least 2 parameters. "
+            + std::to_string( params.size() )
+            + " was provided"
+        );
+    }
+
     switch (command){
         // int *
         case FIOSETOWN:
@@ -439,7 +456,7 @@ Php::Value io_ioctl(Php::Parameters &params){
         case TIOCMGET:
         case TIOCGSOFTCAR:
         case FIONREAD:
-        case TIOCINQ:
+        //case TIOCINQ:
         case TIOCGETD:
         case VT_OPENQRY:
         case SOUND_MIXER_READ_VOLUME:
@@ -460,8 +477,8 @@ Php::Value io_ioctl(Php::Parameters &params){
         case SOUND_MIXER_READ_LINE2  :
         case SOUND_MIXER_READ_LINE3  :
         case SOUND_MIXER_READ_MUTE   :
-        case SOUND_MIXER_READ_ENHANCE:
-        case SOUND_MIXER_READ_LOUD   :
+        //case SOUND_MIXER_READ_ENHANCE:
+        //case SOUND_MIXER_READ_LOUD   :
         case SOUND_MIXER_READ_RECSRC :
         case SOUND_MIXER_READ_DEVMASK:
         case SOUND_MIXER_READ_RECMASK:
@@ -485,8 +502,8 @@ Php::Value io_ioctl(Php::Parameters &params){
         case SOUND_MIXER_WRITE_LINE2  :
         case SOUND_MIXER_WRITE_LINE3  :
         case SOUND_MIXER_WRITE_MUTE   :
-        case SOUND_MIXER_WRITE_ENHANCE:
-        case SOUND_MIXER_WRITE_LOUD   :
+        //case SOUND_MIXER_WRITE_ENHANCE:
+        //case SOUND_MIXER_WRITE_LOUD   :
         case SOUND_MIXER_WRITE_RECSRC :
         case SOUND_PCM_READ_RATE      :
         case SOUND_PCM_READ_CHANNELS  :
@@ -522,7 +539,7 @@ Php::Value io_ioctl(Php::Parameters &params){
         case HDIO_GET_UNMASKINTR   :
         case HDIO_GET_MULTCOUNT    :
         case HDIO_GET_KEEPSETTINGS :
-        case HDIO_GET_CHIPSET      :
+        // case HDIO_GET_CHIPSET      :
         case HDIO_GET_NOWERR       :
         case HDIO_GET_DMA          :
         case HDIO_DRIVE_CMD        :
@@ -534,10 +551,9 @@ Php::Value io_ioctl(Php::Parameters &params){
         case FS_IOC_GETVERSION     :
         case FS_IOC_SETVERSION     :
         case FS_IOC32_SETFLAGS     :
-        case FS_IOC32_SETFLAGS     :
         case FS_IOC32_GETVERSION   :
         case FS_IOC32_SETVERSION         :
-        case CYGETTHRESH
+        case CYGETTHRESH :
         case CYGETDEFTHRESH:
         case CYGETTIMEOUT:
         case CYGETDEFTIMEOUT:
@@ -545,10 +561,12 @@ Php::Value io_ioctl(Php::Parameters &params){
         case SNDCTL_SEQ_NRMIDIS:
         case SNDCTL_SYNTH_MEMAVL:
         case SIOCGIFENCAP:
-            int buffer = std::stoi( params[2] );
-            rc = ioctl(fd, command, &buffer);
-            params[2] = buffer;
+            int_buffer = std::stoi( params[2] );
+            rc = ioctl(fd, command, &int_buffer);
+            params[2] = int_buffer;
             break;
+
+/*
 
         // Const int *
         case TIOCMBIS:
@@ -772,7 +790,7 @@ Php::Value io_ioctl(Php::Parameters &params){
             decimal_timestamp = buffer.tv_sec + buffer.tv_usec / 1000000;
             params[2] = decimal_timestamp;
             break;
-/*
+
         case TIOCGPGRP        pid_t *
 
 
@@ -1119,12 +1137,12 @@ Php::Value io_ioctl(Php::Parameters &params){
         case VT_RESIZEX       const struct vt_consize *
 
 
+        */
 
         default:
             break;
 
-      }
-      */
+    }
 
     // Process return code
     if(rc == -1){
@@ -1351,7 +1369,7 @@ Php::Value io_set_serial(Php::Parameters &params){
     Php::Value ret = false;
     //string path = params[0];
     int fd = std::stoi( params[0] );
-    struct termios serial_settings;
+    // struct termios serial_settings;
     string line = params[1];
     unsigned char readTimeout = 0.0;
 
@@ -1780,7 +1798,6 @@ int cfsetspeed(struct termios *termios_p, speed_t speed);
        0x80087601   FS_IOC_GETVERSION     int *
        0x40087602   FS_IOC_SETVERSION     int *
        0xC020660B   FS_IOC_FIEMAP         struct fiemap *
-       0x40086602   FS_IOC32_SETFLAGS     int *
        0x40086602   FS_IOC32_SETFLAGS     int *
        0x80047601   FS_IOC32_GETVERSION   int *
        0x40047602   FS_IOC32_SETVERSION   int *

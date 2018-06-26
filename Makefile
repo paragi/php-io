@@ -29,8 +29,8 @@ NAME				=	io
 #	one for each extension. Use this variable to specify this directory.
 #
 
-INI_DIR				=	/etc/php/7.1/cli/conf.d
-#INI_DIR     =   /etc/php/7.0/mods-available/
+#INI_DIR				=	/etc/php/7.1/cli/conf.d
+INI_DIR     =   /etc/php/7.1/mods-available/
 
 #
 #	The extension dirs
@@ -68,6 +68,7 @@ INI 				=	${NAME}.ini
 COMPILER			=	g++
 LINKER				=	g++
 
+#ARM_COMPILER = arm-linux-gnueabi-gcc
 
 #
 #	Compiler and linker flags
@@ -85,9 +86,11 @@ LINKER				=	g++
 #	with a list of all flags that should be passed to the linker.
 #
 
-COMPILER_FLAGS		=	-Wall -I/usr/include/hidapi -c -O2 -std=c++11 -fpic -o
+#COMPILER_FLAGS		=	-Wall -I/usr/include/hidapi -c -O2 -std=c++11 -fpic -o
+COMPILER_FLAGS		=	-Wall -c -O2 -std=c++11 -fpic -o
 LINKER_FLAGS		=	-shared
-LINKER_DEPENDENCIES	=	-lphpcpp -lusb-1.0 -lhidapi-hidraw
+# LINKER_DEPENDENCIES	=	-lphpcpp -lusb-1.0 -lhidapi-hidraw
+LINKER_DEPENDENCIES	=	-lphpcpp
 
 #LIBS_UDEV = `pkg-config libudev --libs` -lrt
 #LIBS      = $(LIBS_UDEV)
@@ -132,6 +135,7 @@ ${OBJECTS}:
 install:
 						${CP} ${EXTENSION} ${EXTENSION_DIR}
 						${CP} ${INI} ${INI_DIR}
+						phpenmod ${NAME}
 
 clean:
 						${RM} ${EXTENSION} ${OBJECTS}
