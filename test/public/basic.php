@@ -43,7 +43,7 @@ $flags = ["w","w+","r","r+","a","a+","c","c+","x","x+","w+a","a","wn","w+s","d"]
 foreach($flags as $flag)
   present("Flag: $flag = ", dechex(intval(io_test($flag))));
 
-echo "Test basic open, write, read and close";
+echo "Test basic open, write, read and close\n";
 $test_file = "test.txt";
 $content = "This is Some random text string";
 present("io_open(\"$test_file\",\"w+s\")", $fd = io_open($test_file,"w+s"), $fd);
@@ -57,6 +57,17 @@ io_close($fd);
 unlink($test_file);
 
 // Serial
+$test_file ="/dev/tty1";
+$flags = "d";
+$settings="19200,e,8,1";
+present("io_open(\"$test_file\",\"$flags\")", $fd = io_open($test_file,$flags),$fd);
+
+present("io_set_serial(\"$fd\",\"$settings\")", $fd = io_set_serial($fd,$settings));
+
+// present("io_write($fd,\"$content\")",io_write($fd, $content),$fd);
+present("io_close($fd)",io_close($fd) == 0,$fd);
+
+
 $test_file ="/dev/tty1";
 $flags = "w+";
 present("io_open(\"$test_file\",\"$flags\")", $fd = io_open($test_file,$flags),$fd);

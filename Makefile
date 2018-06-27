@@ -20,41 +20,6 @@
 
 NAME				=	io
 
-
-#
-#	Php.ini directories
-#
-#	In the past, PHP used a single php.ini configuration file. Today, most
-#	PHP installations use a conf.d directory that holds a set of config files,
-#	one for each extension. Use this variable to specify this directory.
-#
-
-#INI_DIR				=	/etc/php/7.1/cli/conf.d
-INI_DIR     =   /etc/php/7.1/mods-available/
-
-#
-#	The extension dirs
-#
-#	This is normally a directory like /usr/lib/php5/20121221 (based on the
-#	PHP version that you use. We make use of the command line 'php-config'
-#	instruction to find out what the extension directory is, you can override
-#	this with a different fixed directory
-#
-
-EXTENSION_DIR		=	$(shell php-config --extension-dir)
-
-
-#
-#	The name of the extension and the name of the .ini file
-#
-#	These two variables are based on the name of the extension. We simply add
-#	a certain extension to them (.so or .ini)
-#
-
-EXTENSION 			=	${NAME}.so
-INI 				=	${NAME}.ini
-
-
 #
 #	Compiler
 #
@@ -67,8 +32,6 @@ INI 				=	${NAME}.ini
 
 COMPILER			=	g++
 LINKER				=	g++
-
-#ARM_COMPILER = arm-linux-gnueabi-gcc
 
 #
 #	Compiler and linker flags
@@ -106,6 +69,7 @@ LINKER_DEPENDENCIES	=	-lphpcpp
 RM					=	rm -f
 CP					=	cp -f
 MKDIR				=	mkdir -p
+LS					=   ls -1
 
 
 #
@@ -133,9 +97,7 @@ ${OBJECTS}:
 						${COMPILER} ${COMPILER_FLAGS} $@ ${@:%.o=%.cpp}
 
 install:
-						${CP} ${EXTENSION} ${EXTENSION_DIR}
-						${CP} ${INI} ${INI_DIR}
-						phpenmod ${NAME}
+						./install-extension.sh ${NAME}
 
 clean:
 						${RM} ${EXTENSION} ${OBJECTS}

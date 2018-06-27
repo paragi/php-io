@@ -45,7 +45,7 @@
 #include <linux/ipx.h>
 #include <linux/kd.h>
 #include <linux/lp.h>
-#include <linux/mroute.h>
+//#include <linux/mroute.h>
 #include <linux/msdos_fs.h>
 #include <linux/netrom.h>
 #include <linux/mtio.h>
@@ -193,14 +193,6 @@ const map<long int, int> stopBit = {
     ,{2,CSTOPB}
 };
 
-/*
-const map<char, int> parity = {
-     {'e',PARENB}
-    ,{'o',PARODD}
-
-//#define CMSPAR	  010000000000	// mark or space (stick) parity
-};
-*/
 /*============================================================================*\
   Open file or devices
 
@@ -290,13 +282,17 @@ Php::Value io_close(Php::Parameters &params){
     }
 
     fd = std::stoi(params[0]);
-    io_error_string[fd] = "";
+
     rc = close(fd);
     if(rc != 0){
-        throw Php::Exception("io_close failed: "
-           + string(strerror( errno ))
+        throw Php::Exception(
+            "io_close("
+            + std::to_string( fd )
+            + ") Failed: "
+            + string(strerror( errno ))
         );
     }
+
     ret = rc;
     return ret;
 }
@@ -310,8 +306,7 @@ Php::Value io_close(Php::Parameters &params){
 \*============================================================================*/
 Php::Value io_write(Php::Parameters &params){
     Php::Value ret = 0;
-    int fd;
-    //string buffer;
+    int fd, length;
 
     if( params.size() < 2 ){
         throw Php::Exception("io_write takes 2 parameters. "
@@ -323,10 +318,19 @@ Php::Value io_write(Php::Parameters &params){
     fd = std::stoi( params[0] );
     string buffer = params[1];
 
-    if(fd < 1 || fd > MAX_OPEN_FILES -1 ) return ret;
+    length = write(fd, buffer.c_str(),  buffer.length() );
+    if( length < 0){
+        throw Php::Exception(
+            "io_write("
+            + std::to_string( fd )
+            +","
+            + buffer
+            + ") Failed: "
+            + string(strerror( errno ))
+        );
+    }
 
-    ret = write(fd, buffer.c_str(),  buffer.length() );
-
+    ret = length;
     return ret;
 }
 
@@ -354,7 +358,7 @@ Php::Value io_write(Php::Parameters &params){
   blocking: If timeout is set to -1 (with io_set_serial) io_read wait until $length is reached.
 
 
-NB: end_char not implementet
+NB: end_char not implementet yet
 
 FIONREAD  int *argp
               Get the number of bytes in the input buffer.
@@ -363,11 +367,10 @@ FIONREAD  int *argp
 Php::Value io_read(Php::Parameters &params){
     Php::Value ret = "";
     int fd, length;
-    //int end_char = -1;
-    //string str;
+    int end_char = -1;
 
     if( params.size() < 2 ){
-            throw Php::Exception("io_read takes at least 2 parameters. "
+        throw Php::Exception("io_read takes at least 2 parameters. "
             + std::to_string( params.size() )
             + " was provided"
         );
@@ -375,30 +378,37 @@ Php::Value io_read(Php::Parameters &params){
 
     // File descriptor
     fd = std::stoi( params[0] );
-    if(fd < 1 || fd > MAX_OPEN_FILES -1 ) return ret;
-    io_error_string[fd] = "";
 
     // Length
     length = std::stoi( params[1] );
     char * buffer = new char[length +1];
     if(!buffer){
-        throw Php::Exception("io_read was unable to allocate memory");
+        throw Php::Exception(
+              "io_read was unable to allocate "
+            + std::to_string(length)
+            + "bytes of memory"
+        );
     }
 
     // End of message char
     if(params.size() > 2){
         string str = params[2];
+        end_char = str[0];
     }
 
     // read from device
     length = read(fd, buffer, length);
-	buffer[length] = 0;
-    if(length < 0){
-        throw Php::Exception("io_read operation failed. "
+    if( length < 0){
+        throw Php::Exception(
+            "io_read("
             + std::to_string( fd )
-            + string(strerror(errno))
+            +","
+            + std::to_string( length )
+            + ") Failed: "
+            + string(strerror( errno ))
         );
     }
+    buffer[length] = 0;
 
     if(length > 0){
         ret = std::string(buffer, length);
@@ -406,19 +416,6 @@ Php::Value io_read(Php::Parameters &params){
 
     return ret;
 }
-
-/*============================================================================*\
-  error
-
-  string io_error(int $file_descriptor)
-
-  return the last error message
-\*============================================================================*/
-Php::Value io_error(Php::Parameters &params){
-    Php::Value ret = io_error_string.find( std::stoi( params[0] ) )->second;
-    return ret;
-}
-
 
 /*============================================================================*\
   Ioctl
@@ -544,15 +541,15 @@ Php::Value io_ioctl(Php::Parameters &params){
         case HDIO_GET_DMA          :
         case HDIO_DRIVE_CMD        :
         case BLKROGET              :
-        case FIBMAP               :
+        case FIBMAP                :
         case FIGETBSZ              :
         case FS_IOC_GETFLAGS       :
         case FS_IOC_SETFLAGS       :
         case FS_IOC_GETVERSION     :
         case FS_IOC_SETVERSION     :
-        case FS_IOC32_SETFLAGS     :
-        case FS_IOC32_GETVERSION   :
-        case FS_IOC32_SETVERSION         :
+        //case FS_IOC32_SETFLAGS     :
+        //case FS_IOC32_GETVERSION   :
+        //case FS_IOC32_SETVERSION   :
         case CYGETTHRESH :
         case CYGETDEFTHRESH:
         case CYGETTIMEOUT:
