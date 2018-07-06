@@ -16,6 +16,10 @@
   (c) By Simon Rigét @ Paragi 2018
   License: Apache
 
+  0.6.1 01.07.2018
+    throwing errors instad of returning false.
+    set_serial fixed
+
 \*============================================================================*/
 #include <phpcpp.h>
 #include "basic.h"
@@ -38,7 +42,7 @@ extern "C" {
     {
         // static(!) Php::Extension object that should stay in memory
         // for the entire duration of the process (that's why it's static)
-        static Php::Extension extension("io", "0.6");
+        static Php::Extension extension("io", "0.6.1");
 
         // Add public functions
 
@@ -67,11 +71,6 @@ extern "C" {
              Php::ByVal("file descriptor",  Php::Type::Numeric)
         });
 
-        extension.add<io_error>("io_error", {
-             Php::ByVal("file descriptor",  Php::Type::Numeric)
-        });
-
-
         extension.add<io_tcgetattr>("io_tcgetattr", {
              Php::ByVal("file descriptor",  Php::Type::Numeric)
         });
@@ -84,7 +83,6 @@ extern "C" {
         extension.add<io_ioctl>("io_ioctl", {
              Php::ByVal("file descriptor",  Php::Type::Numeric)
             ,Php::ByVal("command", Php::Type::Numeric)
-            ,Php::ByVal("minimumj_buffer_size", Php::Type::Numeric)
         });
 
 
@@ -95,6 +93,9 @@ extern "C" {
         });
 
 /*
+        extension.add<io_error>("io_error", {
+             Php::ByVal("file descriptor",  Php::Type::Numeric)
+        });
 
         // Hello
         extension.add<hello>("hello", {

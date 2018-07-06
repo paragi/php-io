@@ -16,6 +16,7 @@
 #include <locale>
 #include <map>
 #include <algorithm>
+#include <math.h>
 
 #include <phpcpp.h>
 
@@ -80,7 +81,7 @@ int str2flags(string strflags){
 
     length =  strflags.length();
 
-    for(i=0; i < length; i++){
+    for(i=0; i < length && flags >= 0; i++){
         switch(strflags[i]){
             case 'r': // Read only
                 flags &= ~(O_RDONLY | O_WRONLY | O_RDWR | O_APPEND | O_CREAT | O_TRUNC);
@@ -133,6 +134,9 @@ int str2flags(string strflags){
                 flags |= O_DSYNC;
                 break;
 
+            default:
+                flags = -1;
+                break;
         }
     }
     return flags;
@@ -179,7 +183,6 @@ const map<long int, int> dataSpeed = {
     ,{3500000,B3500000}
     ,{4000000,B4000000}
 };
-
 
 const map<long int, int> dataBit = {
      {5,CS5}
@@ -235,14 +238,17 @@ Php::Value io_open(Php::Parameters &params){
         mode = std::stoi(params[2]);
 
     flags = str2flags(flags_str);
-    if( flags <= 0 ){
+    /*
+    if( flags < 0 ){
         throw Php::Exception(
             "io_open('" + path_str + "','" + flags_str + "') Failed "
             + ": parameter 2 must contain valid flags. '"
             + flags_str
-            + "' was provided"
+            + "' was provided ="
+            + std::to_string( flags )
         );
     }
+    */
 
     if( mode > 04777 )
         mode = 0;
@@ -262,6 +268,7 @@ Php::Value io_open(Php::Parameters &params){
             + std::to_string( fd )
             + ") : "
             + string(strerror( errno ))
+            + "."
         );
     }
 
@@ -290,6 +297,7 @@ Php::Value io_close(Php::Parameters &params){
             + std::to_string( fd )
             + ") Failed: "
             + string(strerror( errno ))
+            + "."
         );
     }
 
@@ -327,6 +335,7 @@ Php::Value io_write(Php::Parameters &params){
             + buffer
             + ") Failed: "
             + string(strerror( errno ))
+            + "."
         );
     }
 
@@ -366,7 +375,8 @@ FIONREAD  int *argp
 \*============================================================================*/
 Php::Value io_read(Php::Parameters &params){
     Php::Value ret = "";
-    int fd, length;
+    int fd, length, rc;
+    int recieved_chars = 0;
     int end_char = -1;
 
     if( params.size() < 2 ){
@@ -393,36 +403,322 @@ Php::Value io_read(Php::Parameters &params){
     // End of message char
     if(params.size() > 2){
         string str = params[2];
-        end_char = str[0];
+        if( str.length() > 0 )
+            end_char = 0 + str[0];
     }
 
     // read from device
-    length = read(fd, buffer, length);
-    if( length < 0){
-        throw Php::Exception(
-            "io_read("
-            + std::to_string( fd )
-            +","
-            + std::to_string( length )
-            + ") Failed: "
-            + string(strerror( errno ))
-        );
-    }
-    buffer[length] = 0;
+    do{
+        // Read until end_char
+        if( end_char >= 0 ){
+            rc = read(fd, &buffer[recieved_chars], 1);
 
-    if(length > 0){
-        ret = std::string(buffer, length);
-    }
+        // Read to length
+        } else {
+            rc = read(fd, buffer, length - recieved_chars);
+        }
+
+        if( rc < 0){
+            throw Php::Exception(
+                "io_read("
+                + std::to_string( fd )
+                +","
+                + std::to_string( length )
+                + ") Failed: "
+                + string(strerror( errno ))
+            );
+        }
+
+         // End Of File
+        if( rc == 0 )
+            break;
+
+        recieved_chars += rc;
+
+        // End char read
+        if( end_char >= 0  && ( 0 + buffer[recieved_chars-1] ) == end_char )
+            break;
+
+        // Max length reached
+        if( recieved_chars >= length )
+            break;
+
+    }while(rc > 0);
+
+    if(recieved_chars > 0)
+        ret = std::string(buffer, recieved_chars);
 
     return ret;
 }
 
 /*============================================================================*\
+  set_serial
+
+  array io_set_serial(Number $fd, string $settings [,number $read_timeout)
+
+  Parameters:
+  fd: OS File descriptor
+
+  settings: A string containing one or more of the following values and words, separated by space og commas.
+
+    number <speed> Baurate bits pr. second. Only standard values are accepted.
+        int he range of 50 - 4000000 See man pages for tty.
+
+    number <bit> number of bits in a charakter. values are 5 - 8
+
+    number <stop bits> values 1 - 2
+
+    all other number values are discarted.
+
+    "even" | "odd" paraty bit.
+
+    "stick" use mark-stick parity.
+
+    "xon" use xon/off software flow controle
+
+    "hwflow"  use hardware flowcontrole with the RTS/CTS lines
+
+    "loop" Let the device perform an internal loop back - if supported.
+
+  read timeout: Number of seconds io_read will wait for a charakter. value range from 0.1 - 25.5 if set to 0 io_read will return immediately, with the available charakters read. If set to -1 io_read will block, until the specified number of charakters are revieved.
+
+  return: false or an associative array containing the values set.
+
+  Values that are not specified are set to defaults:
+    speed: 9600
+    bits:  8
+    stopbits: 1
+    parity: off
+    sw flow controle: off
+    hw flow controle: off
+    loop off
+
+  example:
+    $fd = io_open("/dev/ttyUSB0","d")
+    io_set_serial($fd","115200 7 2 odd hwflow",0,5)
+
+  If some of the more exotic attributes is needed, please use io_ioctl to set the attributes.
+
+
+  set_serial reads the current termio structure from the device.
+  manipulate it directly and with the help of some system library
+  functions. At the end the termio structure is used to set the
+  configuration with a ioctl call.
+
+\*============================================================================*/
+Php::Value io_set_serial(Php::Parameters &params){
+    Php::Value ret = false;
+    vector<string> parameter;
+    double number;
+    string str;
+    map<string,string> serial;
+    struct termios termio_struct;
+    int modem_control_bits;
+    bool no_loopback = false;
+    int rc = -1;
+
+    if( params.size() < 2 ){
+        throw Php::Exception("io_set_serial takes at least 1 parameters."
+        + std::to_string( params.size() )
+        + " was provided"
+        );
+    }
+    int fd = std::stoi( params[0] );
+
+    // Read the device settings structure
+    memset (&termio_struct, 0, sizeof termio_struct);
+    //rc = tcgetattr (fd, &termio_struct);
+    rc = ioctl(fd, TCGETS, &termio_struct);
+    if ( rc != 0){
+        throw Php::Exception(
+             "io_set_serial operation failed to retrieve serial settings ("
+            + string(strerror( errno ))
+            + ") Is this a serial device?"
+        );
+    }
+
+    // Read loop back setting. Fail gracefully.
+    if( ioctl(fd, TIOCMGET, &modem_control_bits) )
+        no_loopback = true;
+
+    modem_control_bits &= ~TIOCM_LOOP; // disable loop back mode
+
+    // Manipulate the termio structure
+
+    // Set to raw mode. cfmakeraw sets the following:
+    // c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+    // c_oflag &= ~OPOST;
+    // c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    // c_cflag &= ~(CSIZE | PARENB);
+    // c_cflag |= CS8;
+    cfmakeraw(&termio_struct);
+
+    // Set to some other usefull default.
+    termio_struct.c_cflag |= (CLOCAL | CREAD);    // Ignore modem control lines,
+                                        // enable reading
+    termio_struct.c_cflag &= ~CSTOPB;             // 1 stop bit
+    termio_struct.c_cflag &= ~CRTSCTS;            // Hw flow controle off
+
+    termio_struct.c_cc[VMIN]  = 1;                // Set read to block
+
+    // Set read to timeout (0.1 - 25,5 seconds)
+    if( params.size() > 2 ){
+        termio_struct.c_cc[VMIN]  = 0;        // read doesn't block
+        termio_struct.c_cc[VTIME] = (int)(std::stof(params[2]) * 10 ) & 0xff;
+    }
+
+    // Split parameters into entities and set device
+    string line = params[1];
+    Tokenize(line,parameter," ,:;-/+");
+    for (vector<string>::iterator it = parameter.begin(); it != parameter.end(); ++it){
+
+        // Process numeric parameters
+        number = atoi(it->c_str());
+        if(number > 0){
+
+            // Set speed
+            if( number > 8 ){
+                if( dataSpeed.count( number ) != 1 ){
+                    throw Php::Exception("io_set_serial operation failed because Baud rate of '"
+                        + std::to_string(number)
+                        + "'Bit/s is non-standard."
+                    );
+                }
+
+                // Modify termios with new bit-rate
+                if ( cfsetispeed(&termio_struct, dataSpeed.at(number)) != 0 ){
+                    throw Php::Exception("io_set_serial operation failed to set input baudrate");
+                }
+
+                if ( cfsetospeed(&termio_struct, dataSpeed.at(number)) !=  0){
+                    throw Php::Exception("io_set_serial operation failed to set input  baudrate");
+                }
+
+                serial["speed"] = std::to_string((long int)number);
+
+            // Set number of bits pr word (5-8)
+            }else if(number > 4){
+                termio_struct.c_cflag = (termio_struct.c_cflag & ~CSIZE) | dataBit.at(number);
+                serial["bits"] = std::to_string((long int)number);
+
+            // Stop bits
+            }else if(number < 3){
+                termio_struct.c_cflag |= stopBit.at(number);
+                serial["stopBits"] = std::to_string((long int)number);
+            }
+
+        // Process alphanumeric parameters
+        }else{
+            str = *it;
+            transform(str.begin(), str.end(), str.begin(), (int (*)(int))tolower);
+
+            switch( str[0] ){
+                // Parity
+                case 'n':
+                    termio_struct.c_cflag &= ~PARENB;
+                    serial["parity"] = "None";
+                    break;
+
+                case 'e':
+                    termio_struct.c_cflag |= PARENB;
+                    termio_struct.c_cflag &= ~PARODD;
+                    serial["parity"] = "Even";
+                    break;
+
+                case 'o':
+                    termio_struct.c_cflag |= PARENB;
+                    termio_struct.c_cflag |= PARODD;
+                    serial["parity"] = "Odd";
+                    break;
+
+                // (not in POSIX) Use "stick" (mark/space) parity (supported on certain serial devices): if PARODD is set, the parity bit is always 1; if PARODD is not set, then the parity bit is always 0).
+                case 's':
+                    termio_struct.c_cflag |= CMSPAR;
+                    termio_struct.c_cflag &= ~PARODD;
+                    serial["parity"] = "Space";
+                    break;
+
+                case 'm':
+                    termio_struct.c_cflag |= CMSPAR;
+                    termio_struct.c_cflag |= PARODD;
+                    serial["parity"] = "Mark";
+                    break;
+
+                // Soft flow controle Enable XON/XOFF flow control.
+                case 'x':
+                    termio_struct.c_iflag |= IXON | IXOFF;
+                    serial["xon"] = "Xon/off-flow-controle";
+                    break;
+
+                // Hardware flow controle (not in POSIX) Enable RTS/CTS (hardware) flow control.
+                case 'h':
+                    termio_struct.c_cflag |= CRTSCTS;
+                    serial["hw"] = "Flow-controle";
+                    break;
+
+                // Loop back mode (Ignore error)
+                case 'l':
+                    if( no_loopback )
+                        serial["loop"] = "Not supported (TIOCMGET)";
+                    else
+                        modem_control_bits |= TIOCM_LOOP;
+                    break;
+
+                default:
+                    throw Php::Exception(
+                        "io_set_serial operation failed. Unknown setting: "
+                        + str
+                    );
+            }
+
+        }
+    }
+
+    // Set loop back mode
+    if( !no_loopback && ioctl(fd, TIOCMSET, &modem_control_bits) != 0 ){
+        serial["loop"] = "Not supported (ioctl TIOCMSET)";
+    }
+
+    // Set combined attributes
+    if (tcsetattr (fd, TCSADRAIN, &termio_struct) != 0){
+        throw Php::Exception("io_set_serial operation failed to set parameters for this device, with ioctl TCSADRAIN ("
+            + string(strerror( errno ))
+            + ") Is it a serial device?"
+        );
+    }
+
+    ret = serial;
+
+    return ret;
+}
+
+/*============================================================================*\
+Linux uses a dirty method for non-standard baud rates, called "baud rate aliasing". Basically, you tell the serial driver to interpret the value B38400 differently. This is controlled with the ASYNC_SPD_CUST flag in serial_struct member flags.
+
+You need to manually calculate the divisor for the custom speed as follows:
+
+// configure port to use custom speed instead of 38400
+ioctl(port, TIOCGSERIAL, &ss);
+ss.flags = (ss.flags & ~ASYNC_SPD_MASK) | ASYNC_SPD_CUST;
+ss.custom_divisor = (ss.baud_base + (speed / 2)) / speed;
+closestSpeed = ss.baud_base / ss.custom_divisor;
+
+if (closestSpeed < speed * 98 / 100 || closestSpeed > speed * 102 / 100) {
+    sprintf(stderr, "Cannot set serial port speed to %d. Closest possible is %d\n", speed, closestSpeed));
+}
+
+ioctl(port, TIOCSSERIAL, &ss);
+
+cfsetispeed(&tios, B38400);
+cfsetospeed(&tios, B38400);
+*/
+
+/*============================================================================*\
   Ioctl
 
-  string ioctl(int $file_descriptor, int $command , &$buffer)
+  Mixed ioctl(int $file_descriptor, int $command [, mixed $data])
 
-  Controle device sriver parameters.
+  Controle device driver parameters.
 
   Use of this function makes your code very hardware and operating system
   dependent.
@@ -433,7 +729,6 @@ Php::Value io_ioctl(Php::Parameters &params){
     int fd = std::stoi( params[0] );
     int command = std::stoi( params[1] );
     int rc = -1;
-    int int_buffer;
 
     if( params.size() < 2 ){
             throw Php::Exception("io_ioctl takes at least 2 parameters. "
@@ -441,8 +736,91 @@ Php::Value io_ioctl(Php::Parameters &params){
             + " was provided"
         );
     }
+    switch( command ){
+        // Const int *
 
-    switch (command){
+        case TIOCMBIS:
+        case TIOCMBIC:
+        case TIOCMSET:
+        case TIOCSSOFTCAR:
+        case TIOCPKT:
+        case FIONBIO:
+        case TIOCSETD:
+        case TIOCSERGWILD:
+        case TIOCSERGETLSR:
+        case FIOASYNC        :
+        case TIOCSERSWILD    :
+        case SIOCAX25NOUID   :
+        //case SIOCAX25DIGCTL  :
+        case SNDCTL_TMR_METRONOME :
+        case SNDCTL_MIDI_MPUMODE  :
+        case PPPIOCSFLAGS       :
+        case PPPIOCSASYNCMAP    :
+        //case PPPIOCSINPSIG      :
+        case PPPIOCSDEBUG       :
+        case PPPIOCSMRU         :
+        //case PPPIOCRASYNCMAP    :
+        case PPPIOCSMAXCID      :
+        case BLKROSET           :
+        //case SIOCNRRTCTL      :
+        //case DDIOCSDBG          :
+        case SCSI_IOCTL_PROBE_HOST   :
+        case SNDCTL_SEQ_TESTMIDI     :
+        case SNDCTL_SEQ_RESETSAMPLES :
+        case SNDCTL_SEQ_THRESHOLD    :
+        case SNDCTL_FM_4OP_ENABLE    :
+        case SIOCSIFENCAP            :
+
+        // int
+        case TCSBRK:
+        case TCXONC:
+        case TCFLSH:
+        case TIOCSCTTY:
+        case TCSBRKP:
+        case CDROMEJECT_SW :
+        case VT_RELDISP    :
+        case VT_ACTIVATE   :
+        case VT_WAITACTIVE :
+        case VT_DISALLOCATE:
+        case LPCHAR        :
+        case LPTIME        :
+        case LPABORT       :
+        case LPSETIRQ      :
+        case LPWAIT        :
+        case LPCAREFUL     :
+        case LPABORTOPEN   :
+        case KDSKBMODE     :
+        case KDSKBMETA     :
+        case KDSKBLED      :
+        case KDSIGACCEPT   :
+        case KIOCSOUND     :
+        case KDMKTONE      :
+        case KDSETLED      :
+        case KDADDIO       :
+        case KDDELIO       :
+        case KDSETMODE     :
+        case HDIO_SET_MULTCOUNT    :
+        case HDIO_SET_UNMASKINTR   :
+        case HDIO_SET_KEEPSETTINGS :
+        //case HDIO_SET_CHIPSET      :
+        case HDIO_SET_NOWERR       :
+        case HDIO_SET_DMA          :
+        case FDRESET          :
+        case FDSETEMSGTRESH   :
+        //case CM206CTL_GET_STAT     :
+        //case CM206CTL_GET_LAST_STAT:
+        case CYSETTHRESH       :
+        case CYSETDEFTHRESH    :
+        case CYSETTIMEOUT      :
+        case CYSETDEFTIMEOUT   :
+        case CDROMAUDIOBUFSIZ:
+            if( params.size() < 3 ){
+                throw Php::Exception("io_ioctl This command ("
+                    + std::to_string( command )
+                    + ") takes an integer as the 3th parameter. None was given"
+                );
+            }
+
         // int *
         case FIOSETOWN:
         case SIOCSPGRP:
@@ -558,98 +936,6 @@ Php::Value io_ioctl(Php::Parameters &params){
         case SNDCTL_SEQ_NRMIDIS:
         case SNDCTL_SYNTH_MEMAVL:
         case SIOCGIFENCAP:
-            int_buffer = std::stoi( params[2] );
-            rc = ioctl(fd, command, &int_buffer);
-            params[2] = int_buffer;
-            break;
-
-/*
-
-        // Const int *
-        case TIOCMBIS:
-        case TIOCMBIC:
-        case TIOCMSET:
-        case TIOCSSOFTCAR:
-        case TIOCPKT:
-        case FIONBIO:
-        case TIOCSETD:
-        case TIOCSERGWILD:
-        case TIOCSERGETLSR:
-        case FIOASYNC        :
-        case TIOCSERSWILD    :
-        case SIOCAX25NOUID   :
-        case SIOCAX25DIGCTL  :
-        case SNDCTL_TMR_METRONOME :
-        case SNDCTL_MIDI_MPUMODE  :
-        case PPPIOCSFLAGS       :
-        case PPPIOCSASYNCMAP    :
-        case PPPIOCSINPSIG      :
-        case PPPIOCSDEBUG       :
-        case PPPIOCSMRU         :
-        case PPPIOCRASYNCMAP    :
-        case PPPIOCSMAXCID      :
-        case BLKROSET           :
-        case SIOCNRRTCTL      :
-        case DDIOCSDBG          :
-        case SCSI_IOCTL_PROBE_HOST   :
-        case SNDCTL_SEQ_TESTMIDI     :
-        case SNDCTL_SEQ_RESETSAMPLES :
-        case SNDCTL_SEQ_THRESHOLD    :
-        case SNDCTL_FM_4OP_ENABLE    :
-        case SIOCSIFENCAP            :
-            int buffer = std::stoi( params[2] );
-            rc = ioctl(fd, command, &buffer);
-            break;
-
-        // int
-        case TCSBRK:
-        case TCXONC:
-        case TCFLSH:
-        case TIOCSCTTY:
-        case TCSBRKP:
-        case CDROMEJECT_SW :
-        case VT_RELDISP    :
-        case VT_ACTIVATE   :
-        case VT_WAITACTIVE :
-        case VT_DISALLOCATE:
-        case LPCHAR        :
-        case LPTIME        :
-        case LPABORT       :
-        case LPSETIRQ      :
-        case LPWAIT        :
-        case LPCAREFUL     :
-        case LPABORTOPEN   :
-        case KDSKBMODE     :
-        case KDSKBMETA     :
-        case KDSKBLED      :
-        case KDSIGACCEPT   :
-        case KIOCSOUND     :
-        case KDMKTONE      :
-        case KDSETLED      :
-        case KDADDIO       :
-        case KDDELIO       :
-        case KDSETMODE     :
-        case HDIO_SET_MULTCOUNT    :
-        case HDIO_SET_UNMASKINTR   :
-        case HDIO_SET_KEEPSETTINGS :
-        case HDIO_SET_CHIPSET      :
-        case HDIO_SET_NOWERR       :
-        case HDIO_SET_DMA          :
-        case FDRESET          :
-        case FDSETEMSGTRESH   :
-        case CM206CTL_GET_STAT     :
-        case CM206CTL_GET_LAST_STAT:
-        case CYSETTHRESH       :
-        case CYSETDEFTHRESH    :
-        case CYSETTIMEOUT      :
-        case CYSETDEFTIMEOUT   :
-        case CDROMAUDIOBUFSIZ:
-            string str = params[2];
-            char buffer = str[0];
-
-            int buffer = std::stoi( params[2] );
-            rc = ioctl(fd, command, buffer);
-            break;
 
         // Void
         case FIONCLEX:
@@ -659,10 +945,10 @@ Php::Value io_ioctl(Php::Parameters &params){
         case TIOCNXCL:
         case TIOCCONS:
         case TIOCNOTTY:
-        case STL_BINTR   :
-        case STL_BSTART  :
-        case STL_BSTOP   :
-        case STL_BRESET  :
+        //case STL_BINTR   :
+        //case STL_BSTART  :
+        //case STL_BSTOP   :
+        //case STL_BRESET  :
         case CDROMPAUSE  :
         case CDROMRESUME :
         case CDROMSTOP   :
@@ -670,7 +956,7 @@ Php::Value io_ioctl(Php::Parameters &params){
         case CDROMEJECT  :
         case CDROMRESET  :
         case VT_SENDSIG  :
-        case UMSDOS_INIT_EMD     :
+        //case UMSDOS_INIT_EMD     :
         case SNDCTL_SEQ_PERCMODE :
         case SNDCTL_SEQ_PANIC    :
         case SNDCTL_DSP_RESET    :
@@ -685,8 +971,8 @@ Php::Value io_ioctl(Php::Parameters &params){
         case SNDCTL_SEQ_SYNC  :
         case SIOCGIFSLAVE     :
         case SIOCSIFSLAVE     :
-        case SIOCADDRTOLD     :
-        case SIOCDELRTOLD     :
+        // case SIOCADDRTOLD     :
+        // case SIOCDELRTOLD     :
         case LPRESET      :
         case KDENABIO     :
         case KDDISABIO    :
@@ -703,147 +989,256 @@ Php::Value io_ioctl(Php::Parameters &params){
         case BLKRRPART    :
         case BLKFLSBUF    :
         case SIOCNRDECOBS :
-        case TIOCSCCINI   :
+        // case TIOCSCCINI   :
         case SCSI_IOCTL_TAGGED_ENABLE  :
         case SCSI_IOCTL_TAGGED_DISABLE :
-        case SIOCSIFLINK                :
-            rc = ioctl(fd, command, NULL);
+        case SIOCSIFLINK:
+        {
+            int int_buffer = 0;
+            if( params.size() > 2 )
+                int_buffer = std::stoi( params[2] );
+            rc = ioctl(fd, command, &int_buffer);
+            ret = int_buffer;
             break;
+        }
 
         // Char *
-        case KDGETLED   :
-        case KDGKBTYPE  :
+        case KDGETLED:
+        case KDGKBTYPE:
         case SIOCGIFNAME:
-            string str = params[2];
-            if(str.length()<1){
-                io_error_string[fd] = "device ioctl expects parameter 3 to be of type string with the lenght of 1";
-                return false;
-            }
-            char buffer = str[0];
-            rc = ioctl(fd, command, &buffer);
-            params[2] = buffer;
-            break;
 
         // const char *
         case TIOCSTI:
         case TIOCLINUX:
         case SIOCAIPXITFCRT:
         case SIOCAIPXPRISLT:
-            string str = params[2];
-            if(str.length()<1){
-                io_error_string[fd] = "device ioctl expects parameter 3 to be of type string with the lenght of 1";
-                return false;
-            }
-            char buffer = str[0];
-            rc = ioctl(fd, command, &buffer);
+        {
+            string char_buffer = "\0";
+            if( params.size() > 2 )
+                string char_buffer =  params[2];
+
+            rc = ioctl(fd, command, &char_buffer[0]);
+            ret = char_buffer;
             break;
+        }
 
         // unsigned long *
         case BLKGETSIZE :
         case BLKRAGET   :
         case BLKRASET:
-            unsigned long buffer = std::stoi( params[2] );
-            rc = ioctl(fd, command, &buffer);
-            params[2] = buffer;
-            break;
+        {
+            unsigned long ul_buffer = 0;
+            if( params.size() > 2 )
+                ul_buffer = std::stoi( params[2] );
 
-        case TFD_IOC_SET_TICKS:
-            uint64_t buffer = std::stoi( params[2] );
-            rc = ioctl(fd, command, &buffer);
-            params[2] = buffer;
+            rc = ioctl(fd, command, &ul_buffer);
+            int buffer = ul_buffer;
+            ret = buffer;
             break;
+        }
+
+/*        // uint64_t
+        case TFD_IOC_SET_TICKS:
+        {
+            uint64_t uint64_t_buffer = 0;
+            if( params.size() > 2 )
+                uint64_t_buffer = std::stoi( params[2] );
+
+            rc = ioctl(fd, command, &uint64_t_buffer);
+            ret = uint64_t_buffer;
+            break;
+        }
+*/
 
         // __u32 *
         case FAT_IOCTL_GET_ATTRIBUTES:
         case FAT_IOCTL_GET_VOLUME_ID :
-          __u32 buffer = std::stoi( params[2] );
-          rc = ioctl(fd, command, &buffer);
-          params[2] = buffer;
-          break;
 
         // const __u32 *
         case FAT_IOCTL_SET_ATTRIBUTES:
-            const __u32 buffer = std::stoi( params[2] );
-            rc = ioctl(fd, command, &buffer);
+        {
+            __u32 u32_buffer = 0;
+            if( params.size() > 2 )
+                u32_buffer = std::stoi( params[2] );
+
+            rc = ioctl(fd, command, &u32_buffer);
+            int buffer = u32_buffer;
+            ret = buffer;
             break;
+        }
 
         //  struct * timeval {
         //       long tv_sec;    // seconds
         //       long tv_usec;   // microseconds
         //    };
-        case SIOCGSTAMP:
-            struct timeval buffer;
-            double decimal_timestamp, seconds, useconds;
+
+        case SIOCGSTAMP :
+        {
+            struct timeval timeval_buffer;
+            double decimal_timestamp = 0.0, seconds = 0.0, useconds = 0.0;
 
             // Convert PHP real number to timeval
-            decimal_timestamp = params[2];
-            useconds = std::modf(decimal_timestamp, &seconds) * 1000000;
-            buffer.tv_sec = (long)seconds;
-            buffer.tv_usec = (long)useconds;
+            if( params.size() > 2 ){
+                double decimal_timestamp = params[2];
+                useconds = modf(decimal_timestamp, &seconds) * 1000000;
+            }
+            timeval_buffer.tv_sec = seconds;
+            timeval_buffer.tv_usec = useconds;
 
-            rc = ioctl(fd, command, &buffer);
+            rc = ioctl(fd, command, &timeval_buffer);
 
             // Convert timeval to PHP number.
-            decimal_timestamp = buffer.tv_sec + buffer.tv_usec / 1000000;
-            params[2] = decimal_timestamp;
+            decimal_timestamp =
+                timeval_buffer.tv_sec + timeval_buffer.tv_usec / 1000000;
+            ret = decimal_timestamp;
             break;
+        }
 
-        case TIOCGPGRP        pid_t *
+        // pid_t *
+        case TIOCGPGRP:
+        // const pid_t *
+        case TIOCSPGRP:
+        {
+            pid_t pid_t_buffer = 0;
+            if( params.size() > 2 )
+                pid_t_buffer = std::stoi( params[2] );
+
+            rc = ioctl(fd, command, &pid_t_buffer);
+            ret = pid_t_buffer;
+            break;
+        }
+
+/*
+        // struct termio *
+        case TCGETA:
+
+        // const struct termio *
+        case TCSETA:
+        case TCSETAW:
+        case TCSETAF:
+
+        // struct termios *
+        case TCGETS:
+        case TIOCGLCKTRMIOS:
+
+        // const struct termios *
+        case TIOCSLCKTRMIOS:
+        case TCSETS:
+        case TCSETSW:
+        case TCSETSF:
 
 
-        case TIOCSPGRP        const pid_t *
 
-        case SIOCSIWCOMMIT      struct iwreq *
-        case SIOCGIWNAME        struct iwreq *
-        case SIOCSIWNWID        struct iwreq *
-        case SIOCGIWNWID        struct iwreq *
-        case SIOCSIWFREQ        struct iwreq *
-        case SIOCGIWFREQ        struct iwreq *
-        case SIOCSIWMODE        struct iwreq *
-        case SIOCGIWMODE        struct iwreq *
-        case SIOCSIWSENS        struct iwreq *
-        case SIOCGIWSENS        struct iwreq *
-        case SIOCSIWRANGE       struct iwreq *
-        case SIOCGIWRANGE       struct iwreq *
-        case SIOCSIWPRIV        struct iwreq *
-        case SIOCGIWPRIV        struct iwreq *
-        case SIOCSIWSTATS       struct iwreq *
-        case SIOCGIWSTATS       struct iwreq *
-        case SIOCSIWSPY         struct iwreq *
-        case SIOCGIWSPY         struct iwreq *
-        case SIOCSIWTHRSPY      struct iwreq *
-        case SIOCGIWTHRSPY      struct iwreq *
-        case SIOCSIWAP          struct iwreq *
-        case SIOCGIWAP          struct iwreq *
-        case SIOCGIWAPLIST      struct iwreq *
-        case SIOCSIWSCAN        struct iwreq *
-        case SIOCGIWSCAN        struct iwreq *
-        case SIOCSIWESSID       struct iwreq *
-        case SIOCGIWESSID       struct iwreq *
-        case SIOCSIWNICKN       struct iwreq *
-        case SIOCGIWNICKN       struct iwreq *
-        case SIOCSIWRATE        struct iwreq *
-        case SIOCGIWRATE        struct iwreq *
-        case SIOCSIWRTS         struct iwreq *
-        case SIOCGIWRTS         struct iwreq *
-        case SIOCSIWFRAG        struct iwreq *
-        case SIOCGIWFRAG        struct iwreq *
-        case SIOCSIWTXPOW       struct iwreq *
-        case SIOCGIWTXPOW       struct iwreq *
-        case SIOCSIWRETRY       struct iwreq *
-        case SIOCGIWRETRY       struct iwreq *
-        case SIOCSIWENCODE      struct iwreq *
-        case SIOCGIWENCODE      struct iwreq *
-        case SIOCSIWPOWER       struct iwreq *
-        case SIOCGIWPOWER       struct iwreq *
-        case SIOCSIWGENIE       struct iwreq *
-        case SIOCGIWGENIE       struct iwreq *
-        case SIOCSIWMLME        struct iwreq *
-        case SIOCSIWAUTH        struct iwreq *
-        case SIOCGIWAUTH        struct iwreq *
-        case SIOCSIWENCODEEXT   struct iwreq *
-        case SIOCGIWENCODEEXT   struct iwreq *
-        case SIOCSIWPMKSA       struct iwreq *
+        case TIOCGSERIAL      struct serial_struct *
+
+        case TIOCSSERIAL      const struct serial_struct *
+
+        case TIOCTTYGSTRUCT   struct tty_struct *
+
+        case TIOCSERGSTRUCT   struct async_struct *
+
+        case TIOCSERGETMULTI   struct serial_multiport_struct *
+
+        case TIOCSERSETMULTI   const struct serial_multiport_struct *
+
+        case TIOCGWINSZ       struct winsize *
+
+        case TIOCSWINSZ       const struct winsize *
+
+        case SIOCAX25GETPARMS   struct ax25_parms_struct *     // I-O
+
+        case SIOCAX25GETUID     const struct sockaddr_ax25 *
+        case SIOCAX25ADDUID     const struct sockaddr_ax25 *
+        case SIOCAX25DELUID     const struct sockaddr_ax25 *
+
+        case SIOCAX25SETPARMS   const struct ax25_parms_struct *
+
+
+
+        / struct iwreq *
+           The structure to exchange data for ioctl.
+           This structure is the same as 'struct ifreq', but (re)defined for
+           convenience...
+           Do I need to remind you about structure size (32 octets) ?
+           struct iwreq {
+              union {
+                char ifrn_name[IFNAMSIZ]; // if name, e.g. "eth0"
+           } ifr_ifrn;
+
+        case SIOCSIWCOMMIT:
+        case SIOCGIWNAME:
+        case SIOCSIWNWID:
+        case SIOCGIWNWID:
+        case SIOCSIWFREQ:
+        case SIOCGIWFREQ:
+        case SIOCSIWMODE:
+        case SIOCGIWMODE:
+        case SIOCSIWSENS:
+        case SIOCGIWSENS:
+        case SIOCSIWRANGE:
+        case SIOCGIWRANGE:
+        case SIOCSIWPRIV:
+        case SIOCGIWPRIV:
+        case SIOCSIWSTATS:
+        case SIOCGIWSTATS:
+        case SIOCSIWSPY:
+        case SIOCGIWSPY:
+        case SIOCSIWTHRSPY:
+        case SIOCGIWTHRSPY:
+        case SIOCSIWAP:
+        case SIOCGIWAP:
+        case SIOCGIWAPLIST:
+        case SIOCSIWSCAN:
+        case SIOCGIWSCAN:
+        case SIOCSIWESSID:
+        case SIOCGIWESSID:
+        case SIOCSIWNICKN:
+        case SIOCGIWNICKN:
+        case SIOCSIWRATE:
+        case SIOCGIWRATE:
+        case SIOCSIWRTS:
+        case SIOCGIWRTS:
+        case SIOCSIWFRAG:
+        case SIOCGIWFRAG:
+        case SIOCSIWTXPOW:
+        case SIOCGIWTXPOW:
+        case SIOCSIWRETRY:
+        case SIOCGIWRETRY:
+        case SIOCSIWENCODE:
+        case SIOCGIWENCODE:
+        case SIOCSIWPOWER:
+        case SIOCGIWPOWER:
+        case SIOCSIWGENIE:
+        case SIOCGIWGENIE:
+        case SIOCSIWMLME:
+        case SIOCSIWAUTH:
+        case SIOCGIWAUTH:
+        case SIOCSIWENCODEEXT:
+        case SIOCGIWENCODEEXT:
+        case SIOCSIWPMKSA:
+
+            /
+             * A frequency
+             * For numbers lower than 10^9, we encode the number in 'm' and
+             * set 'e' to 0
+             * For number greater than 10^9, we divide it by the lowest power
+             * of 10 to get 'm' lower than 10^9, with 'm'= f / (10^'e')...
+             * The power of 10 is in 'e', the result of the division is in 'm'.
+             *
+                struct iw_freq
+                {
+                __s32 m; // Mantissa
+                __s16 e; // Exponent
+                __u8 i; // List index (when in range struct)
+                __u8 flags; // Flags (fixed/auto)
+                };
+
+            struct iw_freq iw_freq_buffer = {0,0,0,0};
+            double db_buffer = 0.0;
+
+            // Convert double into iw_freq
+            if( params.size() > 2 ) {
+                db_buffer = std::double( params[2] );
 
 
         case EQL_ENSLAVE       struct ifreq *   // MORE // I-O
@@ -852,7 +1247,7 @@ Php::Value io_ioctl(Php::Parameters &params){
         case EQL_SETSLAVECFG   struct ifreq *   // MORE // I-O
         case EQL_GETMASTRCFG   struct ifreq *   // MORE // I-O
         case EQL_SETMASTRCFG   struct ifreq *   // MORE // I-O
-        case SIOCDEVPLIP   struct ifreq *   // I-O
+        case SIOCDEVPLIP            struct ifreq *   // I-O
         case SIOCGIFFLAGS     struct ifreq *           // I-O
         case SIOCGIFADDR      struct ifreq *           // I-O
         case SIOCGIFBRDADDR   struct ifreq *           // I-O
@@ -900,45 +1295,6 @@ Php::Value io_ioctl(Php::Parameters &params){
         case SIOCDRARP           const struct arpreq *
         case SIOCSRARP           const struct arpreq *
 
-
-
-        case TCGETA           struct termio *
-
-        case TCSETA           const struct termio *
-        case TCSETAW          const struct termio *
-        case TCSETAF          const struct termio *
-
-        case TCGETS           struct termios *
-        case TIOCGLCKTRMIOS   struct termios *
-
-        case TIOCSLCKTRMIOS   const struct termios *
-        case TCSETS           const struct termios *
-        case TCSETSW          const struct termios *
-        case TCSETSF          const struct termios *
-
-        case TIOCGSERIAL      struct serial_struct *
-
-        case TIOCSSERIAL      const struct serial_struct *
-
-        case TIOCTTYGSTRUCT   struct tty_struct *
-
-        case TIOCSERGSTRUCT   struct async_struct *
-
-        case TIOCSERGETMULTI   struct serial_multiport_struct *
-
-        case TIOCSERSETMULTI   const struct serial_multiport_struct *
-
-        case TIOCGWINSZ       struct winsize *
-
-        case TIOCSWINSZ       const struct winsize *
-
-        case SIOCAX25GETPARMS   struct ax25_parms_struct *     // I-O
-
-        case SIOCAX25GETUID     const struct sockaddr_ax25 *
-        case SIOCAX25ADDUID     const struct sockaddr_ax25 *
-        case SIOCAX25DELUID     const struct sockaddr_ax25 *
-
-        case SIOCAX25SETPARMS   const struct ax25_parms_struct *
 
         case CDROMPLAYMSF      const struct cdrom_msf *
         case CDROMREADMODE2   const struct cdrom_msf *          // MORE
@@ -1136,8 +1492,11 @@ Php::Value io_ioctl(Php::Parameters &params){
 
         */
 
-        default:
-            break;
+        default :
+            throw Php::Exception("io_ioctl This command ("
+                + std::to_string( command )
+                + ") is not defined in this package. (Use io_ioctl_raw)"
+            );
 
     }
 
@@ -1149,12 +1508,8 @@ Php::Value io_ioctl(Php::Parameters &params){
           ;
     }
 
-    //  ret = std::string(buffer.data(), &buffer[minimum_buffer_size]);
-
-    // a few drivers return values in rc!
-    return rc;
+    return ret;
 }
-
 
 
 
@@ -1315,262 +1670,7 @@ serial_settings.c_ospeed = B50;
     return ret;
 }
 
-/*============================================================================*\
-  set_serial
-
-  array io_set_serial(string $path, string $settings [,number $read_timeout)
-
-  Parameters:
-  path: full path to device
-
-  settings: A string containing one or more of the following values and words, separated by space og commas.
-
-    number <speed> Baurate bits pr. second. Only standard values are accepted.
-        int he range of 50 - 4000000 See man pages for tty.
-
-    number <bit> number of bits in a charakter. values are 5 - 8
-
-    number <stop bits> values 1 - 2
-
-    all other number values are discarted.
-
-    "even" | "odd" paraty bit.
-
-    "stick" use mark-stick parity.
-
-    "xon" use xon/off software flow controle
-
-    "hwflow"  use hardware flowcontrole with the RTS/CTS lines
-
-    "loop" Let the device perform an internal loop back - if supported.
-
-  read timeout: Number of seconds io_read will wait for a charakter. value range from 0.1 - 25.5 if set to 0 io_read will return immediately, with the available charakters read. If set to -1 io_read will block, until the specified number of charakters are revieved.
-
-  return: false or an associative array containing the values set.
-
-  Values that are not specified are set to defaults:
-    speed: 9600
-    bits:  8
-    stopbits: 1
-    parity: off
-    sw flow controle: off
-    hw flow controle: off
-    loop
-
-  example:
-    io_set_serial("/dev/tty3","115200 7 2 odd hwflow",0,5)
-
-  If some of the more exotic attributes is needed, please use io_ioclt to set the attributes.
-\*============================================================================*/
-Php::Value io_set_serial(Php::Parameters &params){
-    Php::Value ret = false;
-    //string path = params[0];
-    int fd = std::stoi( params[0] );
-    // struct termios serial_settings;
-    string line = params[1];
-    unsigned char readTimeout = 0.0;
-
-    vector<string> parameter;
-    double number;
-    string str;
-    map<string,string> serial;
-    struct termios tty;
-    int modem_control_bits;
-    bool no_loopback = false;
-
-    if(params.size() >2)
-        readTimeout = (int)(std::stof(params[2]) * 10 ) & 0xff;
-
-    // Read the device settings structure
-    memset (&tty, 0, sizeof tty);
-    if (tcgetattr (fd, &tty) != 0){
-        io_error_string[fd] =
-             "io_set_serial operation failed to retrieve settings: "
-            + string(strerror( errno ))
-        ;
-        return ret;
-    }
-
-    // Preset to usefull defaults
-
-    // RAW sets the following:
-    // c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
-    // c_oflag &= ~OPOST;
-    // c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-    // c_cflag &= ~(CSIZE | PARENB);
-    // c_cflag |= CS8;
-    cfmakeraw(&tty);
-
-    // tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;     // 8-bit chars
-    // tty.c_iflag &= ~(IGNBRK | ICRNL);  // disable break processing
-                                    // no CR NL convertions
-    // tty.c_lflag = 0;                // no signaling chars, no echo,
-                                    // no canonical processing
-    // tty.c_oflag = 0;                // no remapping, no delays
-
-    // tty.c_iflag &= ~(IXON | IXOFF | IXANY); // shut off xon/xoff ctrl
-
-    tty.c_cflag |= (CLOCAL | CREAD);// Ignore modem control lines,
-                                    // enable reading
-    // tty.c_cflag &= ~(PARENB | PARODD);      // shut off parity
-    tty.c_cflag &= ~CSTOPB;         // 1 stop bit
-    tty.c_cflag &= ~CRTSCTS;        // Hw flow controle off
-
-    // Set read to block
-    if(readTimeout == 0){
-        tty.c_cc[VMIN]  = 1;        // read blocks
-
-    // Set read to timeout (0.1 - 25,5 seconds)
-    }else{
-        tty.c_cc[VMIN]  = 0;        // read doesn't block
-        tty.c_cc[VTIME] = readTimeout;
-    }
-
-    // Prepare loop back
-    if( ioctl(fd, TIOCMGET, &modem_control_bits) )
-        no_loopback = true;
-    else
-        modem_control_bits &= ~TIOCM_LOOP; // disable loop back mode
-
-    // Split parameters into entities and set device
-    Tokenize(line,parameter," ,:;-/+");
-    for (vector<string>::iterator it = parameter.begin(); it != parameter.end(); ++it){
-
-        // Process numeric parameters
-        number = atoi(it->c_str());
-        if(number > 0){
-
-            // Set speed
-            if( number > 8 ){
-                if( dataSpeed.count( number ) != 1 ){
-                    io_error_string[fd] =
-                        "io_set_serial operation failed because Baud rate of '"
-                        + std::to_string(number)
-                        + "'Bit/s is non-standard."
-                    ;
-                    return ret;
-                }
-
-                if ( cfsetispeed(&tty, dataSpeed.at(number)) != 0 ){
-                    io_error_string[fd] =
-                        + "io_set_serial operation failed to set input baudrate";
-                    return ret;
-
-                }
-                if ( cfsetospeed(&tty, dataSpeed.at(number)) !=  0){
-                    io_error_string[fd] =
-                        + "io_set_serial operation failed to set input  baudrate";
-                    return ret;
-
-                }
-
-                serial["speed"] = std::to_string((long int)number);
-
-            // Set number of bits pr word (5-8)
-            }else if(number > 4){
-                tty.c_cflag = (tty.c_cflag & ~CSIZE) | dataBit.at(number);
-                serial["bits"] = std::to_string((long int)number);
-
-            // Stop bits
-            }else if(number < 3){
-                tty.c_cflag |= stopBit.at(number);
-                serial["stopBits"] = std::to_string((long int)number);
-            }
-
-        // Process alphanumeric parameters
-        }else{
-            str = *it;
-            transform(str.begin(), str.end(), str.begin(), (int (*)(int))tolower);
-
-            // Parity
-            if(str[0] == 'e'){
-                tty.c_cflag |= PARENB;
-                tty.c_cflag &= ~PARODD;
-                serial["parity"] = str;
-
-            }else if(str[0] == 'o'){
-                tty.c_cflag |= PARENB;
-                tty.c_cflag |= PARODD;
-                serial["parity"] = str;
-
-            // (not in POSIX) Use "stick" (mark/space) parity (supported on certain serial devices): if PARODD is set, the parity bit is always 1; if PARODD is not set, then the parity bit is always 0).
-            }else if(str[0] == 's'){
-                tty.c_cflag |= CMSPAR;
-                serial["parity"] = str;
-
-            // Soft flow controle Enable XON/XOFF flow control.
-            }if(str[0] == 'x'){
-                tty.c_iflag |= IXON | IXOFF;
-                serial["xon"] = "Xon/off-flow-controle";
-
-            // Hardware flow controle (not in POSIX) Enable RTS/CTS (hardware) flow control.
-            }else if(str[0] == 'h'){
-                tty.c_cflag |= CRTSCTS;
-                serial["hw"] = "Flow-controle";
-
-            // Loop back mode (Ignore error)
-            }else if(str[0] == 'l'){
-                if( no_loopback )
-                    serial["loop"] = "Not supported (TIOCMGET)";
-                else
-                    modem_control_bits |= TIOCM_LOOP;
-            }
-        }
-        cout << *it << endl;
-    }
-
-    // Do the combined setting of attributes
-    if (tcsetattr (fd, TCSANOW, &tty) != 0){
-        io_error_string[fd] =
-             "io_set_serial operation failed to set parameters with TCSANOW "
-            + string(strerror( errno ))
-        ;
-        return ret;
-    }
-
-    // Set loop back mode
-    if( !no_loopback )
-        if( ioctl(fd, TIOCMSET, &modem_control_bits) )
-            if( modem_control_bits & TIOCM_LOOP )
-                serial["loop"] = "Not supported (TIOCMSET)";
-
-    ret = serial;
-
-    return ret;
-}
-
-
-/*============================================================================*\
-Linux uses a dirty method for non-standard baud rates, called "baud rate aliasing". Basically, you tell the serial driver to interpret the value B38400 differently. This is controlled with the ASYNC_SPD_CUST flag in serial_struct member flags.
-
-You need to manually calculate the divisor for the custom speed as follows:
-
-// configure port to use custom speed instead of 38400
-ioctl(port, TIOCGSERIAL, &ss);
-ss.flags = (ss.flags & ~ASYNC_SPD_MASK) | ASYNC_SPD_CUST;
-ss.custom_divisor = (ss.baud_base + (speed / 2)) / speed;
-closestSpeed = ss.baud_base / ss.custom_divisor;
-
-if (closestSpeed < speed * 98 / 100 || closestSpeed > speed * 102 / 100) {
-    sprintf(stderr, "Cannot set serial port speed to %d. Closest possible is %d\n", speed, closestSpeed));
-}
-
-ioctl(port, TIOCSSERIAL, &ss);
-
-cfsetispeed(&tios, B38400);
-cfsetospeed(&tios, B38400);
-
-
-
-
-
-
-
-
-
-
-
-
+/*
 
 
 typedef unsigned char	cc_t;
@@ -2231,4 +2331,199 @@ int cfsetspeed(struct termios *termios_p, speed_t speed);
        // More arguments.  Some ioctl's take a pointer to a structure which
        contains additional pointers.  These are documented here in
        alphabetical order.
+
+
+       typedef unsigned char	cc_t;
+       typedef unsigned int	speed_t;
+       typedef unsigned int	tcflag_t;
+
+       #define NCCS 19
+       struct termios {
+       	tcflag_t c_iflag;		// input mode flags
+       	tcflag_t c_oflag;		// output mode flags
+       	tcflag_t c_cflag;		// control mode flags
+       	tcflag_t c_lflag;		// local mode flags
+       	cc_t c_line;			// line discipline
+       	cc_t c_cc[NCCS];		// control characters
+       };
+
+       struct termios2 {
+       	tcflag_t c_iflag;		// input mode flags
+       	tcflag_t c_oflag;		// output mode flags
+       	tcflag_t c_cflag;		// control mode flags
+       	tcflag_t c_lflag;		// local mode flags
+       	cc_t c_line;			// line discipline
+       	cc_t c_cc[NCCS];		// control characters
+       	speed_t c_ispeed;		// input speed
+       	speed_t c_ospeed;		// output speed
+       };
+
+       struct ktermios {
+       	tcflag_t c_iflag;		// input mode flags
+        tcflag_t c_oflag;		// output mode flags
+       	tcflag_t c_cflag;		// control mode flags
+       	tcflag_t c_lflag;		// local mode flags
+       	cc_t c_line;			// line discipline
+       	cc_t c_cc[NCCS];		// control characters
+       	speed_t c_ispeed;		// input speed
+        speed_t c_ospeed;		// output speed
+       };
+
+       // c_cc characters
+       #define VINTR 0
+       #define VQUIT 1
+       #define VERASE 2
+       #define VKILL 3
+       #define VEOF 4
+       #define VTIME 5
+       #define VMIN 6
+       #define VSWTC 7
+       #define VSTART 8
+       #define VSTOP 9
+       #define VSUSP 10
+       #define VEOL 11
+       #define VREPRINT 12
+       #define VDISCARD 13
+       #define VWERASE 14
+       #define VLNEXT 15
+       #define VEOL2 16
+
+       // c_iflag bits
+       #define IGNBRK	0000001
+       #define BRKINT	0000002
+       #define IGNPAR	0000004
+       #define PARMRK	0000010
+       #define INPCK	0000020
+       #define ISTRIP	0000040
+       #define INLCR	0000100
+       #define IGNCR	0000200
+       #define ICRNL	0000400
+       #define IUCLC	0001000
+       #define IXON	0002000
+       #define IXANY	0004000
+       #define IXOFF	0010000
+       #define IMAXBEL	0020000
+       #define IUTF8	0040000
+
+       // c_oflag bits
+       #define OPOST	0000001
+       #define OLCUC	0000002
+       #define ONLCR	0000004
+       #define OCRNL	0000010
+       #define ONOCR	0000020
+       #define ONLRET	0000040
+       #define OFILL	0000100
+       #define OFDEL	0000200
+       #define NLDLY	0000400
+       #define   NL0	0000000
+       #define   NL1	0000400
+       #define CRDLY	0003000
+       #define   CR0	0000000
+       #define   CR1	0001000
+       #define   CR2	0002000
+       #define   CR3	0003000
+       #define TABDLY	0014000
+       #define   TAB0	0000000
+       #define   TAB1	0004000
+       #define   TAB2	0010000
+       #define   TAB3	0014000
+       #define   XTABS	0014000
+       #define BSDLY	0020000
+       #define   BS0	0000000
+       #define   BS1	0020000
+       #define VTDLY	0040000
+       #define   VT0	0000000
+       #define   VT1	0040000
+       #define FFDLY	0100000
+       #define   FF0	0000000
+       #define   FF1	0100000
+
+       // c_cflag bit meaning
+       #define CBAUD	0010017
+       #define  B0	0000000		// hang up
+       #define  B50	0000001
+       #define  B75	0000002
+       #define  B110	0000003
+       #define  B134	0000004
+       #define  B150	0000005
+       #define  B200	0000006
+       #define  B300	0000007
+       #define  B600	0000010
+       #define  B1200	0000011
+       #define  B1800	0000012
+       #define  B2400	0000013
+       #define  B4800	0000014
+       #define  B9600	0000015
+       #define  B19200	0000016
+       #define  B38400	0000017
+       #define EXTA B19200
+       #define EXTB B38400
+       #define CSIZE	0000060
+       #define   CS5	0000000
+       #define   CS6	0000020
+       #define   CS7	0000040
+       #define   CS8	0000060
+       #define CSTOPB	0000100
+       #define CREAD	0000200
+       #define PARENB	0000400
+       #define PARODD	0001000
+       #define HUPCL	0002000
+       #define CLOCAL	0004000
+       #define CBAUDEX 0010000
+       #define    BOTHER 0010000
+       #define    B57600 0010001
+       #define   B115200 0010002
+       #define   B230400 0010003
+       #define   B460800 0010004
+       #define   B500000 0010005
+       #define   B576000 0010006
+       #define   B921600 0010007
+       #define  B1000000 0010010
+       #define  B1152000 0010011
+       #define  B1500000 0010012
+       #define  B2000000 0010013
+       #define  B2500000 0010014
+       #define  B3000000 0010015
+       #define  B3500000 0010016
+       #define  B4000000 0010017
+       #define CIBAUD	  002003600000	// input baud rate
+       #define CMSPAR	  010000000000	// mark or space (stick) parity
+       #define CRTSCTS	  020000000000	// flow control
+
+       #define IBSHIFT	  16		// Shift from CBAUD to CIBAUD
+
+       // c_lflag bits
+       #define ISIG	0000001
+       #define ICANON	0000002
+       #define XCASE	0000004
+       #define ECHO	0000010
+       #define ECHOE	0000020
+       #define ECHOK	0000040
+       #define ECHONL	0000100
+       #define NOFLSH	0000200
+       #define TOSTOP	0000400
+       #define ECHOCTL	0001000
+       #define ECHOPRT	0002000
+       #define ECHOKE	0004000
+       #define FLUSHO	0010000
+       #define PENDIN	0040000
+       #define IEXTEN	0100000
+       #define EXTPROC	0200000
+
+       // tcflow() and TCXONC use these
+       #define	TCOOFF		0
+       #define	TCOON		1
+       #define	TCIOFF		2
+       #define	TCION		3
+
+       // tcflush() and TCFLSH use these
+       #define	TCIFLUSH	0
+       #define	TCOFLUSH	1
+       #define	TCIOFLUSH	2
+
+       // tcsetattr uses these
+       #define	TCSANOW		0
+       #define	TCSADRAIN	1
+       #define	TCSAFLUSH	2
+
 */

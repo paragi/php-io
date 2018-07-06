@@ -11,21 +11,38 @@
 // list : sudo cat /proc/tty/driver/serial
 
 \*============================================================================*/
-
 $test_result['ok'] = 0;
 $test_result['failed'] = 0;
-
-function present($name,$result,$fd=0){
+function validate($command,$test =""){
     global $test_result;
 
-    echo "$name: ";
-    var_dump($result);
-    if($fd && (!$result || $result <0)){
-        echo "<span style=\"color:red\">Failed:" . io_error($fd) ."</span>\n";
-        $test_result['failed']++;
-    }else
-        $test_result['ok']++;
-    echo "\n";
+    echo "$command: ";
+
+    try{
+        $ret = eval("return " . $command . ";");
+    } catch (Exception $e){
+        $ret = $e->getMessage();
+    }
+
+    if( !empty($test)){
+        echo " Test: ";
+        if(is_scalar($ret))
+            eval("return \"$test \";");
+        else
+            echo $test;
+
+        if(eval("return $test;")){
+            echo "<span style=\"color:green\">OK: </span>\n";
+            $test_result['ok']++;
+        }else{
+            echo "<span style=\"color:red\">Failed: ($test) </span>\n";
+            $test_result['failed']++;
+        }
+    }
+    var_dump($ret);
+    //echo "\n";
+
+    return $ret;
 }
 
 function strToHex($string){
@@ -38,64 +55,143 @@ function strToHex($string){
     return strToUpper($hex);
 }
 
-Echo "Test flag string to bin convertion:\n";
+// Error handler, passes flow over the exception logger with new ErrorException.
+
+function error_handler( $num, $str, $file, $line, $context = null ){
+    exception_handler( new ErrorException( $str, 0, $num, $file, $line ) );
+}
+
+// Uncaught exception handler.
+function exception_handler( $exception )
+{
+    print "<div style='color:red;'>";
+    print "Program failed with '" . get_class( $exception ) . "'</br>";
+    print "Message: {$exception->getMessage()}<br>";
+    print "File: {$exception->getFile()}<br>";
+    print "Line: {$exception->getLine()}<br>";
+    print "</div>";
+    exit();
+}
+
+// Checks for a fatal error, work around for set_error_handler not working on fatal errors.
+function shutdown_check_for_fatal(){
+    $error = error_get_last();
+    if ( $error["type"] == E_ERROR )
+        log_error( $error["type"], $error["message"], $error["file"], $error["line"] );
+}
+
+register_shutdown_function( "shutdown_check_for_fatal" );
+set_error_handler( "error_handler" );
+set_exception_handler( "exception_handler" );
+ini_set( "display_errors", "on" );
+error_reporting( E_ALL );
+
+$nl = str_repeat("=",80) . "\n";
+Echo "{$nl}Test flag string to bin convertion:\n";
 $flags = ["w","w+","r","r+","a","a+","c","c+","x","x+","w+a","a","wn","w+s","d"];
 foreach($flags as $flag)
-  present("Flag: $flag = ", dechex(intval(io_test($flag))));
+  validate("dechex(intval(io_test(\"$flag\")))",'$ret >= 0');
 
-echo "Test basic open, write, read and close\n";
+echo "{$nl}Test basic open, write, read and close\n";
 $test_file = "test.txt";
 $content = "This is Some random text string";
-present("io_open(\"$test_file\",\"w+s\")", $fd = io_open($test_file,"w+s"), $fd);
+$fd = validate("io_open(\"$test_file\",\"w+s\")",'$ret >= 0');
 if($fd < 1) exit;
-present("io_write($fd,\"$content\")",io_write($fd, $content),$fd);
-present("io_close($fd)",io_close($fd) == 0,$fd);
+validate("io_write($fd,\"$content\")",'$ret == ' .strlen($content));
+validate("io_close($fd)",'$ret == 0');
 
-$flags = "r+"; present("io_open(\"$test_file\",\"$flags\")", $fd = io_open($test_file,$flags),$fd);
-present("io_read($fd, ". strlen($content) .")",$res = io_read($fd, strlen($content)),$fd);
+echo "{$nl}Test reading:\n";
+$fd = io_open($test_file,"r");
+validate("io_read($fd, ". strlen($content) .")",'strlen($ret) == '. strlen($content));
+io_close($fd);
+
+echo "{$nl}Test read to end char:\n";
+$fd = io_open($test_file,"r+");
+validate("io_read($fd, ". strlen($content) .",'x')",'strlen($ret) == ' . (strpos($content,"x")+1) );
 io_close($fd);
 unlink($test_file);
 
 // Serial
+echo "{$nl}Test Serial settings:\n";
+
+// Select a real serial devide
+$device_list = glob("/dev/serial/by-path/*");
+$serial_device = @reset($device_list);
+if( empty($serial_device) )
+    echo "NO REAL DEVICE FOUND! tests skiped\n";
+
+if( !empty($serial_device) ){
+    $flags = "d";
+    $settings="38400,8,1,Even";
+    $fd = validate("io_open('$serial_device','$flags')", '$ret >= 0');
+
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="5";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="6";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="7";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="Even";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="Odd";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="mark";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="space";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="2";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="4000000";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+    $settings="50";
+    validate("io_set_serial($fd,'$settings')",'is_array($ret)');
+
+    io_close($fd);
+
+}
+
+echo "{$nl}Test bad Serial settings:\n";
+
 $test_file ="/dev/tty1";
 $flags = "d";
-$settings="19200,e,8,1";
-present("io_open(\"$test_file\",\"$flags\")", $fd = io_open($test_file,$flags),$fd);
+$settings="38400,8,1,Even";
+$fd = validate("io_open(\"$test_file\",\"$flags\")",'$ret >= 0');
 
-present("io_set_serial(\"$fd\",\"$settings\")", $fd = io_set_serial($fd,$settings));
+$settings="38400,8,1,o";
+validate("io_set_serial($fd,'$settings')", '!is_array($ret)');
+io_close($fd);
 
-// present("io_write($fd,\"$content\")",io_write($fd, $content),$fd);
-present("io_close($fd)",io_close($fd) == 0,$fd);
+if( !empty($serial_device) ){
+    $flags = "d";
+    $fd = io_open($serial_device,$flags);
+
+    $settings="38400,8,1,plot";
+    validate("io_set_serial($fd,'$settings')", '!is_array($ret)');
+
+    $settings="40";
+    validate("io_set_serial($fd,'$settings')", '!is_array($ret)');
+
+    $settings="3";
+//    validate("io_set_serial($fd,'$settings')", '!is_array($ret)');
+
+    echo "{$nl}Test other serial tty functions\n";
+    $res = validate("io_tcgetattr($fd)",'is_array($ret)');
+    echo "C_CC string: ";
+    for ($i = 0; $i < 32; $i++)
+      printf(" %02X",ord($res['c_cc'][$i]));
+    echo "\n";
+
+    //validate("io_tcsetattr($fd,[ 'c_line' => 'D', 'c_ispeed' => 17 ])",'$ret == 0');
+
+    io_close($fd);
+}
 
 
-$test_file ="/dev/tty1";
-$flags = "w+";
-present("io_open(\"$test_file\",\"$flags\")", $fd = io_open($test_file,$flags),$fd);
 
-present("io_tcgetattr($fd)",$res = io_tcgetattr($fd) ,$fd);
-echo "C_CC string: ";
-for ($i = 0; $i < 32; $i++)
-  printf(" %02X",ord($res['c_cc'][$i]));
-echo "\n";
+echo "{$nl}Ioctl:\n";
 
-$res['c_line'] = "D";
-$res['c_ispeed'] =17;
-
-present("io_tcsetattr($fd)",io_tcsetattr($fd,$res) ,$fd);
-present("Result reread:",$res = io_tcgetattr($fd) ,$fd);
-echo "C_CC string: ";
-for ($i = 0; $i < 32; $i++)
-  printf(" %02X",ord($res['c_cc'][$i]));
-echo "\n";
 /*
-
-echo "test ioctl";
-// #define TIOCGSERIAL	0x541E
-ypedef unsigned char	cc_t;
-typedef unsigned int	speed_t;
-typedef unsigned int	tcflag_t;
-
-#define NCCS 32
 struct termios
   {
     tcflag_t c_iflag;		// input mode flags
@@ -106,38 +202,29 @@ struct termios
     cc_t c_cc[NCCS];		// control characters
     speed_t c_ispeed;		// input speed
     speed_t c_ospeed;		// output speed
-#define _HAVE_STRUCT_TERMIOS_C_ISPEED 1
-#define _HAVE_STRUCT_TERMIOS_C_OSPEED 1
   };
 */
-/*
-present("io_ioctl($fd, 0x5425,50)", $res = io_ioctl($fd, 0x541E,50) == 0);
-echo "Length=",strlen($res),"\n";
-for ($i = 0; $i < 50; $i++){
- echo " " . dechex(ord($res[$i]));
+
+if( !empty($serial_device) ){
+    $flags = "d";
+    $fd = io_open($serial_device,$flags);
+
+    echo "{$nl}Test ioctl TIOCMGET:\n";
+    // TIOCMGET	0x5415
+    $rc = validate("io_ioctl($fd, 0x5415,0)");
+    echo "Returned: ", dechex($rc),"h\n";
+
+    io_close($fd);
+    echo "\n";
 }
-echo "\n";
-
-io_close($fd);
-
-$path = "/dev/tty1";
-$settings = "115200 8,1-xon;hnd loop";
-present("io_set_serial($path,$settings)",io_set_serial($path,$settings));
-
-present("io_tcgetattr($fd)",$res = io_tcgetattr($fd) ,$fd);
-for ($i = 0; $i < 32; $i++)
-  printf(" %02X",ord($res['c_cc'][$i]));
-echo "\n";
-
-*/
 
 
-echo str_repeat("=", 80);
-printf("\nTests: %d: <span style=\"color:green\">ok: %d </span>",$test_result['ok'] + $test_result['failed'], $test_result['ok'] );
+//====================================================================
+// Results
+printf("{$nl}Tests: %d: <span style=\"color:green\">ok: %d </span>",$test_result['ok'] + $test_result['failed'], $test_result['ok'] );
 if($test_result['failed'] > 0 )
     printf("<span style=\"color:red\">failed: %d</span>\n",$test_result['failed']);
 echo "\n";
-
 exit;
 
 /*

@@ -21,6 +21,16 @@
 NAME				=	io
 
 #
+#	The name of the extension and the name of the .ini file
+#
+#	These two variables are based on the name of the extension. We simply add
+#	a certain extension to them (.so or .ini)
+#
+
+EXTENSION 			=	${NAME}.so
+INI 				=	${NAME}.ini
+
+#
 #	Compiler
 #
 #	By default, the GNU C++ compiler is used. If you want to use a different
@@ -87,7 +97,6 @@ OBJECTS				=	$(SOURCES:%.cpp=%.o)
 #
 #	From here the build instructions start
 #
-
 all:					${OBJECTS} ${EXTENSION}
 
 ${EXTENSION}:			${OBJECTS}
