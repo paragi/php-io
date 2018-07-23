@@ -27,7 +27,7 @@ function validate($command,$test =""){
     if( !empty($test)){
         echo " Test: ";
         if(is_scalar($ret))
-            eval("return \"$test \";");
+            eval("return $test ;");
         else
             echo $test;
 
@@ -88,14 +88,31 @@ error_reporting( E_ALL );
 
 $nl = str_repeat("=",80) . "\n";
 Echo "{$nl}Test flag string to bin convertion:\n";
-$flags = ["w","w+","r","r+","a","a+","c","c+","x","x+","w+a","a","wn","w+s","d"];
-foreach($flags as $flag)
-  validate("dechex(intval(io_test(\"$flag\")))",'$ret >= 0');
+$flags =[
+     "w"   => "241"
+    ,"w+"  => "242"
+    ,"r"   => "0"
+    ,"r+"  => "2"
+    ,"a"   => "440"
+    ,"a+"  => "42"
+    ,"c"   => "41"
+    ,"c+"  => "42"
+    ,"x"   => "c1"
+    ,"x+"  => "c2"
+    ,"w+a" => "440"
+    ,"a"   => "440"
+    ,"wn"  => "a41"
+    ,"w+s" => "1242"
+    ,"d"   => "1002"
+];
+
+foreach($flags as $flag => $result )
+  validate("dechex(intval(io_test_flag(\"$flag\")))",'$ret == "'. $result .'"');
 
 echo "{$nl}Test basic open, write, read and close\n";
 $test_file = "test.txt";
 $content = "This is Some random text string";
-$fd = validate("io_open(\"$test_file\",\"w+s\")",'$ret >= 0');
+$fd = validate("io_open(\"$test_file\",\"w+s\")",'$ret > 0');
 if($fd < 1) exit;
 validate("io_write($fd,\"$content\")",'$ret == ' .strlen($content));
 validate("io_close($fd)",'$ret == 0');
@@ -153,10 +170,10 @@ if( !empty($serial_device) ){
 
 echo "{$nl}Test bad Serial settings:\n";
 
-$test_file ="/dev/tty1";
-$flags = "d";
+$test_file ="/var/tmp/t.txt";
+$flags = "w+";
 $settings="38400,8,1,Even";
-$fd = validate("io_open(\"$test_file\",\"$flags\")",'$ret >= 0');
+$fd = validate("io_open(\"$test_file\",\"$flags\")",'$ret > 0');
 
 $settings="38400,8,1,o";
 validate("io_set_serial($fd,'$settings')", '!is_array($ret)');
@@ -173,16 +190,7 @@ if( !empty($serial_device) ){
     validate("io_set_serial($fd,'$settings')", '!is_array($ret)');
 
     $settings="3";
-//    validate("io_set_serial($fd,'$settings')", '!is_array($ret)');
-
-    echo "{$nl}Test other serial tty functions\n";
-    $res = validate("io_tcgetattr($fd)",'is_array($ret)');
-    echo "C_CC string: ";
-    for ($i = 0; $i < 32; $i++)
-      printf(" %02X",ord($res['c_cc'][$i]));
-    echo "\n";
-
-    //validate("io_tcsetattr($fd,[ 'c_line' => 'D', 'c_ispeed' => 17 ])",'$ret == 0');
+    validate("io_set_serial($fd,'$settings')", 'empty($ret)');
 
     io_close($fd);
 }
@@ -209,13 +217,72 @@ if( !empty($serial_device) ){
     $flags = "d";
     $fd = io_open($serial_device,$flags);
 
+    io_set_serial($fd,"9600,n,8,1");
+
     echo "{$nl}Test ioctl TIOCMGET:\n";
     // TIOCMGET	0x5415
     $rc = validate("io_ioctl($fd, 0x5415,0)");
     echo "Returned: ", dechex($rc),"h\n";
 
+    // 0x00005417   TIOCMBIC
+    $rc = validate("io_ioctl($fd, 0x5417,2)");
+    echo "Returned: ", dechex($rc),"h\n";
+
+    // TIOCMGET	0x5415
+    $rc = validate("io_ioctl($fd, 0x5415,0)");
+    echo "Returned: ", dechex($rc),"h\n";
+
+    // 0x00005402   TCSETS
+    echo "Test ioctl TCSETS:\n";
+    $c_cc  = "\x03\x1C\x7F\x15\x04\x00\x01\x00\x11\x13\x1A\x00\x12\x0F\x17\x16\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01";
+
+    $rc = validate("io_ioctl($fd, 0x5402, [
+         'c_iflag'  => 3
+        ,'c_oflag'  => 4
+        ,'c_cflag'  => 358
+        ,'c_lflag'  => 2608
+        ,'c_line'   => 10
+        ,'c_cc'     => '".  $c_cc . "'
+        ,'c_ispeed' => 300
+        ,'c_ospeed' => 300
+    ])");
+
+    echo "C_CC string: ";
+    if(!empty($rc['c_cc']))
+        for ($i = 0; $i < strlen($rc['c_cc']); $i++)
+            printf(" %02X",ord($rc['c_cc'][$i]));
+    echo "\n";
+
+    // 0x00005401   TCGETS
+    echo "Test ioctl TCGETS:\n";
+    $rc = validate("io_ioctl($fd, 0x5401)");
+    echo "C_CC string: ";
+    if(!empty($rc['c_cc']))
+        for ($i = 0; $i < strlen($rc['c_cc']); $i++)
+            printf(" %02X",ord($rc['c_cc'][$i]));
+    echo "\n";
     io_close($fd);
     echo "\n";
+}
+
+echo "{$nl}Test file locking:\n";
+$test_file ="/var/tmp/t.txt";
+$flags = "w+";
+
+if (pcntl_fork() > 0) {
+     // we are the parent
+     usleep(100);
+     $fd = validate("io_open(\"$test_file\",\"$flags\")",'strlen($ret) > 10');
+     @io_close(intval($fd));
+     @unlink($test_file);
+
+} else {
+    // we are the child
+    $fd = io_open($test_file,$flags);
+    usleep(1000);
+    io_close($fd);
+    @unlink($test_file);
+    exit;
 }
 
 

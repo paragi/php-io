@@ -42,16 +42,11 @@ extern "C" {
     {
         // static(!) Php::Extension object that should stay in memory
         // for the entire duration of the process (that's why it's static)
-        static Php::Extension extension("io", "0.6.1");
+        static Php::Extension extension("io", "0.6.3");
 
         // Add public functions
 
         // Basic IO interface
-        extension.add<io_test>("io_test", {
-             Php::ByVal("File name",  Php::Type::String)
-        });
-
-
         extension.add<io_open>("io_open", {
              Php::ByVal("File name",  Php::Type::String)
             ,Php::ByVal("flags", Php::Type::String)
@@ -71,41 +66,25 @@ extern "C" {
              Php::ByVal("file descriptor",  Php::Type::Numeric)
         });
 
-        extension.add<io_tcgetattr>("io_tcgetattr", {
-             Php::ByVal("file descriptor",  Php::Type::Numeric)
-        });
-
-        extension.add<io_tcsetattr>("io_tcsetattr", {
-             Php::ByVal("file descriptor",  Php::Type::Numeric)
-            ,Php::ByVal("array", Php::Type::Array)
-        });
-
         extension.add<io_ioctl>("io_ioctl", {
              Php::ByVal("file descriptor",  Php::Type::Numeric)
             ,Php::ByVal("command", Php::Type::Numeric)
         });
 
+        extension.add<io_ioctl>("io_ioctl_raw", {
+              Php::ByVal("file descriptor",  Php::Type::Numeric)
+             ,Php::ByVal("command", Php::Type::Numeric)
+        });
 
-        // Serial
         extension.add<io_set_serial>("io_set_serial", {
              Php::ByVal("Path",  Php::Type::String)
             ,Php::ByVal("Settings", Php::Type::String)
         });
 
+        extension.add<io_test>("io_test_flag", {
+             Php::ByVal("File name",  Php::Type::String)
+        });
 /*
-        extension.add<io_error>("io_error", {
-             Php::ByVal("file descriptor",  Php::Type::Numeric)
-        });
-
-        // Hello
-        extension.add<hello>("hello", {
-            Php::ByVal("string", Php::Type::String)
-        });
-
-        extension.add<io_test1>("io_test1", {
-            Php::ByVal("string", Php::Type::String)
-        });
-
         // Hid interface
         extension.add<io_hid_enumerate>("io_hid_enumerate", {
              Php::ByVal("vendor_ID",  Php::Type::Numeric)

@@ -1,40 +1,16 @@
 # PHP-IO
-PHP extension for direct access to operating system I/O drivers
+is a PHP extension for accessing hardware and peripherals directly through the operating systems driver controls.
+PHP is fast becoming an important language in unexpected areas, primary do to the gentle learning curve and versatility. This package makes PHP an option for embedded programming and IoT.
+
+At this point, PHP-IO is only compiled for unix.
+
 
 Features:
-- Operate on file descriptors
+- Direct access to file descriptors
 - IOCTL access to driver control functions
 - Easy serial port setup
 
-PHP is fast becoming an important language in unexpected areas, primary do to the gentle learning curve and versatility. However it lacks access to lower level I/O functions, to be fully useful with embedded  programming and IOT. This package is an attempt to remedy that.
-
-# Install
-Currently only compiles under unix.
-### Debian/Ubuntu linux:
-
-Install PHPCPP following instructions here: http://www.php-cpp.com/documentation/install
-
-    sudo make install
-
-
-### Raspberry PI/raspberian
-
-    On older versions than 9.0 (Debian stretch):
-    if possible, upgrade to 9.0. otherwise install PHP7 packagers  with dotdeb repository or manually.
-
-    sudo apt-get install php7.0-device
-    git clone https://github.com/CopernicaMarketingSoftware/PHP-CPP.git
-    cd PHP-CPP
-    make
-    sudo make install
-
-    cd ..
-    git clone https://github.com/paragi/PHP-IO.git
-    cd PHP-IO
-    make
-    sudo make install
-
-# Functions:
+Full documentation is located in the wiki: [Wiki](https://github.com/paragi/PHP-IO/wiki)
 
 ## Basics:
 - io_open: Open device or file with file descriptor
@@ -51,8 +27,13 @@ Install PHPCPP following instructions here: http://www.php-cpp.com/documentation
 
 
 # Changes
+* 0.6.3 File locking added.
 
-* 0.7.2	Published on GitHub.
+* 0.6.2 Libraries merges to one file.
+    Added io_ioctl and io_ioctl_raw
+    Removed special error handling and applied PHP exceptions to all errors.
+
+* 0.6.1	Published on GitHub.
 	Name and function prefix changed to the shorter “io”
 	Exceptions thrown on all failures.
 	Parameter interpretation strategy loosed towards best guess and reasonable defaults, rather than failing.
@@ -64,7 +45,7 @@ I really appreciate all kinds of contribution.
 
 Don't hesitate to submit an issue on github. But please provide a reproducible example.
 
-Code should look good and compact, and be covered by a test case or example where posible.
+Code should look good and compact, and be covered by a test case or example where possible.
 Please don't change the formatting style laid out, without a very good reason.
 
 Things that needs doing is:

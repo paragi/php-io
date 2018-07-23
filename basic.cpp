@@ -220,9 +220,8 @@ Php::Value io_open(Php::Parameters &params){
     int fd = -1;
     int flags = 0;
     mode_t mode = 0;
+    struct flock file_lock_structure;
     string error;
-    //string path_str;
-    //string flags_str;
 
     if( params.size() < 2 ){
         throw Php::Exception("io_open takes at least 2 parameters. "
@@ -238,7 +237,6 @@ Php::Value io_open(Php::Parameters &params){
         mode = std::stoi(params[2]);
 
     flags = str2flags(flags_str);
-    /*
     if( flags < 0 ){
         throw Php::Exception(
             "io_open('" + path_str + "','" + flags_str + "') Failed "
@@ -248,7 +246,6 @@ Php::Value io_open(Php::Parameters &params){
             + std::to_string( flags )
         );
     }
-    */
 
     if( mode > 04777 )
         mode = 0;
@@ -272,6 +269,38 @@ Php::Value io_open(Php::Parameters &params){
         );
     }
 
+    // Set lock for the entire file.
+    if( flags && ( O_WRONLY | O_RDWR ) )
+        file_lock_structure.l_type = F_WRLCK;
+    else
+        file_lock_structure.l_type = F_RDLCK;
+    file_lock_structure.l_whence = SEEK_SET;
+    file_lock_structure.l_start = 0;
+    file_lock_structure.l_len = 0;
+    if (fcntl(fd, F_SETLK, &file_lock_structure) == -1) {
+        if (errno == EACCES || errno == EAGAIN) {
+            close( fd );
+            throw Php::Exception("io_open could not open device '"
+                + path_str
+                + "' The file is already in use by another process"
+            );
+
+        } else {
+            close( fd );
+            throw Php::Exception("io_open('"
+                + path_str
+                + "','"
+                + flags_str
+                + "') Failed "
+                + "("
+                + std::to_string( fd )
+                + ") : "
+                + string(strerror( errno ))
+                + " while setting an exclusive lock on the file."
+            );
+        }
+    }
+
     ret = fd;
     return ret;
 }
@@ -291,6 +320,7 @@ Php::Value io_close(Php::Parameters &params){
     fd = std::stoi(params[0]);
 
     rc = close(fd);
+    /*
     if(rc != 0){
         throw Php::Exception(
             "io_close("
@@ -300,7 +330,7 @@ Php::Value io_close(Php::Parameters &params){
             + "."
         );
     }
-
+*/
     ret = rc;
     return ret;
 }
@@ -660,8 +690,10 @@ Php::Value io_set_serial(Php::Parameters &params){
                 case 'l':
                     if( no_loopback )
                         serial["loop"] = "Not supported (TIOCMGET)";
-                    else
+                    else {
                         modem_control_bits |= TIOCM_LOOP;
+                        serial["loop"] = "Loopback";
+                    }
                     break;
 
                 default:
@@ -670,14 +702,12 @@ Php::Value io_set_serial(Php::Parameters &params){
                         + str
                     );
             }
-
         }
     }
 
     // Set loop back mode
-    if( !no_loopback && ioctl(fd, TIOCMSET, &modem_control_bits) != 0 ){
+    if( !no_loopback && ioctl(fd, TIOCMSET, &modem_control_bits) != 0 )
         serial["loop"] = "Not supported (ioctl TIOCMSET)";
-    }
 
     // Set combined attributes
     if (tcsetattr (fd, TCSADRAIN, &termio_struct) != 0){
@@ -964,9 +994,9 @@ Php::Value io_ioctl(Php::Parameters &params){
         case SNDCTL_DSP_POST     :
         case SNDCTL_DSP_NONBLOCK :
         case SNDCTL_COPR_RESET   :
-        case SNDCTL_TMR_START    :
-        case SNDCTL_TMR_STOP     :
-        case SNDCTL_TMR_CONTINUE :
+        //case SNDCTL_TMR_START    : same as serial commands TCSETS
+        //case SNDCTL_TMR_STOP     :
+        //case SNDCTL_TMR_CONTINUE :
         case SNDCTL_SEQ_RESET :
         case SNDCTL_SEQ_SYNC  :
         case SIOCGIFSLAVE     :
@@ -1108,24 +1138,158 @@ Php::Value io_ioctl(Php::Parameters &params){
             break;
         }
 
-/*
+        /*
+        typedef unsigned char	cc_t;
+        typedef unsigned int	speed_t;
+        typedef unsigned int	tcflag_t;
+
+        struct termios {
+            tcflag_t c_iflag;		// input mode flags
+            tcflag_t c_oflag;		// output mode flags
+            tcflag_t c_cflag;		// control mode flags
+            tcflag_t c_lflag;		// local mode flags
+            cc_t c_line;			// line discipline
+            cc_t c_cc[32];		    // control characters
+            speed_t c_ispeed;		// input speed
+            speed_t c_ospeed;		// output speed
+        };
+
+        NB: struct termios is an extension of termio. If driver expects termio and gets termios, the extension will be ignored.
+        */
+
         // struct termio *
         case TCGETA:
+        case TCGETS:
+
+        // struct termios *
+        case TIOCGLCKTRMIOS:
+        {
+            struct termios termios_buffer = {
+                 0
+                ,0
+                ,0
+                ,0
+                ,0
+                ,"\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+                ,0
+                ,0
+            };
+
+            rc = ioctl(fd, command, &termios_buffer);
+
+            ret = Php::Array();
+            ret["c_iflag"]  = (int)termios_buffer.c_iflag;
+            ret["c_oflag"]  = (int)termios_buffer.c_oflag;
+            ret["c_cflag"]  = (int)termios_buffer.c_cflag;
+            ret["c_lflag"]  = (int)termios_buffer.c_lflag;
+            ret["c_line"]   = termios_buffer.c_line;
+            ret["c_cc"]     = string(termios_buffer.c_cc,termios_buffer.c_cc + sizeof(termios_buffer.c_cc));
+            ret["c_ispeed"] = (int)termios_buffer.c_ispeed;
+            ret["c_ospeed"] = (int)termios_buffer.c_ospeed;
+
+            break;
+        }
 
         // const struct termio *
         case TCSETA:
         case TCSETAW:
         case TCSETAF:
 
-        // struct termios *
-        case TCGETS:
-        case TIOCGLCKTRMIOS:
-
         // const struct termios *
         case TIOCSLCKTRMIOS:
         case TCSETS:
         case TCSETSW:
         case TCSETSF:
+        {
+            struct termios termios_buffer = {
+                 0
+                ,0
+                ,0
+                ,0
+                ,0
+                ,"\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+                ,0
+                ,0
+            };
+            ret = Php::Array();
+
+            // Get defaults from actual values
+            rc = ioctl(fd, TCGETS, &termios_buffer);
+
+            if( params.size() > 2 ){
+                std::map<std::string,std::string> php_array = params[2];
+                if ( php_array.find("c_iflag") != php_array.end() )
+                    termios_buffer.c_iflag  = std::stoi( php_array["c_iflag"] );
+
+                if ( php_array.find("c_oflag") != php_array.end() )
+                    termios_buffer.c_oflag  = std::stoi( php_array["c_oflag"] );
+
+                if ( php_array.find("c_cflag") != php_array.end() )
+                    termios_buffer.c_cflag  = std::stoi( php_array["c_cflag"] );
+
+                if ( php_array.find("c_lflag") != php_array.end() )
+                    termios_buffer.c_lflag  = std::stoi( php_array["c_lflag"] );
+
+                if ( php_array.find("c_line") != php_array.end() )
+                    termios_buffer.c_line = 0xff & std::stoi( params[2]["c_line"] );
+
+                if ( php_array.find("c_cc") != php_array.end() )
+                    std::copy( php_array["c_cc"].begin(), php_array["c_cc"].end(), termios_buffer.c_cc );
+
+                if ( php_array.find("c_ispeed") != php_array.end() )
+                    termios_buffer.c_ispeed = std::stoi( php_array["c_ispeed"] );
+
+                if ( php_array.find("c_ispeed") != php_array.end() )
+                    termios_buffer.c_ospeed = std::stoi( php_array["c_ospeed"] );
+            }
+
+            rc = ioctl(fd, command, &termios_buffer);
+
+            ret["c_iflag"]  = (int)termios_buffer.c_iflag;
+            ret["c_oflag"]  = (int)termios_buffer.c_oflag;
+            ret["c_cflag"]  = (int)termios_buffer.c_cflag;
+            ret["c_lflag"]  = (int)termios_buffer.c_lflag;
+            ret["c_line"]   = termios_buffer.c_line;
+            ret["c_cc"]     = string(termios_buffer.c_cc,termios_buffer.c_cc + sizeof(termios_buffer.c_cc));
+            ret["c_ispeed"] = (int)termios_buffer.c_ispeed;
+            ret["c_ospeed"] = (int)termios_buffer.c_ospeed;
+
+            break;
+        }
+
+/*
+struct winsize {
+	unsigned short ws_row;
+	unsigned short ws_col;
+	unsigned short ws_xpixel;
+	unsigned short ws_ypixel;
+};
+
+#define NCC 8
+struct termio {
+	unsigned short c_iflag;		// input mode flags
+	unsigned short c_oflag;		// output mode flags
+	unsigned short c_cflag;		// control mode flags
+	unsigned short c_lflag;		// local mode flags
+	unsigned char c_line;		// line discipline
+	unsigned char c_cc[NCC];	// control characters
+};
+
+// modem lines
+#define TIOCM_LE	0x001
+#define TIOCM_DTR	0x002
+#define TIOCM_RTS	0x004
+#define TIOCM_ST	0x008
+#define TIOCM_SR	0x010
+#define TIOCM_CTS	0x020
+#define TIOCM_CAR	0x040
+#define TIOCM_RNG	0x080
+#define TIOCM_DSR	0x100
+#define TIOCM_CD	TIOCM_CAR
+#define TIOCM_RI	TIOCM_RNG
+#define TIOCM_OUT1	0x2000
+#define TIOCM_OUT2	0x4000
+#define TIOCM_LOOP	0x8000
 
 
 
@@ -1502,10 +1666,11 @@ Php::Value io_ioctl(Php::Parameters &params){
 
     // Process return code
     if(rc == -1){
-          io_error_string[fd] = "io_ioctl operation failed. "
-              + string(strerror(errno))
-              + " (" + std::to_string( fd ) + ")"
-          ;
+        throw Php::Exception("ioctl ("
+            + std::to_string( command )
+            + ") operation failed with Error:"
+            + string(strerror(errno))
+        );
     }
 
     return ret;
@@ -1516,19 +1681,21 @@ Php::Value io_ioctl(Php::Parameters &params){
 /*============================================================================*\
   Ioctl
 
-  string ioctl(int $file_descriptor, int $command , int $minimum_buffer_size [, string argument] )
+  string io_ioctl_raw(int $file_descriptor, int $command , string argument )
 
-  Controle device sriver parameters.
+  Controle device driver parameters.
 
-  This is a dangerous function, as there is no well defined behaviour, and the
-  controled device driver might do anything with priviliges.
-  Futher more, the buffer used to return parameters from the device driver, has
-  no upper limit. If the buffer is overflowing, it will crash the program and
-  open your code for security risks.
+  When ever posible, use one of the well defined functions for driver controle, like io_set_serial or if non fits, io_ioctl. io_ioctl_raw sould be last resourts to complete a hack.
 
-  When ever posible, use one of the well defined functions for driver controle.
 
-  The returned value is driver specific, OS specific. The byte order and integer
+
+
+  NB: This ioctl function has no over all well defined behaviour, and the controled device driver might do anything with priviliges. Futher more the buffer used to return parameters from the device driver, has no upper limit. If the buffer is overflowing, it will crash the program and open your code for security risks.
+
+
+  NB: The format of the argument is very hardware dependent. Make sure to account for byte order (little/big engine) and integer sizes etc.
+
+  The returned value is driver and OS specific. The byte order and integer
   size is processor specific.
 
   Use of this function makes your code very hardware and operating system
@@ -1560,113 +1727,37 @@ cfmakeraw(&options);
 
 Php::Value io_ioctl_raw(Php::Parameters &params){
     Php::Value ret = false;
+    int rc;
+    int buffer_length = 0;
+
+    if( params.size() < 3 ){
+            throw Php::Exception("io_ioctl_raw takes 3 parameters. "
+            + std::to_string( params.size() )
+            + " was provided"
+        );
+    }
+
     int fd = std::stoi( params[0] );
     int command = std::stoi( params[1] );
-    int minimum_buffer_size = std::stoi( params[2] );
-    // Be on the somewath safer side: add 1MB to buffer size
-    std::vector<char> buffer(minimum_buffer_size + 0x100000);
-    int rc;
+    string argument_str = params[2];
+    buffer_length = argument_str.length();
 
-    if(fd < 1 || fd > MAX_OPEN_FILES -1 ) return ret;
+    // Be on the safer side: add 1MB to buffer size
+    std::vector<char> buffer(buffer_length + 0x100000);
+    strncpy(buffer.data(),argument_str.c_str(),buffer_length);
 
-    // Test secure mode
+    rc = ioctl(fd, command, buffer.data());
 
-    buffer[0] = 0;
-    if(params.size() > 3){
-        string argument = params[3];
-        strncpy(buffer.data(),argument.c_str(),params[3].length());
-        rc = ioctl(fd, command, buffer.data());
-    }else
-        rc = ioctl(fd, command);
-
-    if(rc  != 0){
-        io_error_string[fd] = "io_ioctl_raw operation failed. "
+    // Process return code
+    if(rc == -1){
+        throw Php::Exception("ioctl ("
+            + std::to_string( command )
+            + ") operation failed with Error:"
             + string(strerror(errno))
-            + " (" + std::to_string( fd ) + ")"
-        ;
-
-        // a few drivers return values in rc!
-        if(rc != -1)
-            ret = rc;
-        return ret;
+        );
     }
 
-    ret = std::string(buffer.data(), &buffer[minimum_buffer_size]);
-
-    return ret;
-}
-
-
-
-/*============================================================================*\
-  int tcgetattr(int fd, struct termios *termios_p);
-
-  TY stuff
-
-  string read(int $file_descriptor,
-\*============================================================================*/
-Php::Value io_tcgetattr(Php::Parameters &params){
-    Php::Value ret = false;
-    int fd = std::stoi( params[0] );
-    struct termios serial_settings;
-
-    if(tcgetattr(fd, &serial_settings) != 0){
-        io_error_string[fd] = "io_tcgetattr operation failed. "
-            + string(strerror(errno))
-            + " (" + std::to_string( fd ) + ")"
-        ;
-        return ret;
-    }
-
-    ret = Php::Array();
-    ret["c_iflag"]  = (int)serial_settings.c_iflag;
-    ret["c_oflag"]  = (int)serial_settings.c_oflag;
-    ret["c_cflag"]  = (int)serial_settings.c_cflag;
-    ret["c_lflag"]  = (int)serial_settings.c_lflag;
-    ret["c_line"]   = serial_settings.c_line;
-    ret["c_cc"]     = string(serial_settings.c_cc,serial_settings.c_cc + sizeof(serial_settings.c_cc));
-    ret["c_ispeed"] = (int)serial_settings.c_ispeed;
-    ret["c_ospeed"] = (int)serial_settings.c_ospeed;
-    return ret;
-}
-
-/*============================================================================*\
-  int tcsetattr(int fd, struct termios *termios_p);
-
-
-https://gist.github.com/jerome-labidurie/5dde0ec105fe88aaf5fa8f3c54f4b07d
-
-\*============================================================================*/
-Php::Value io_tcsetattr(Php::Parameters &params){
-    Php::Value ret = false;
-    int fd = std::stoi( params[0] );
-    struct termios serial_settings;
-    const char * str;
-
-    serial_settings.c_iflag  = std::stoi( params[1]["c_iflag"] );
-    serial_settings.c_oflag  = std::stoi( params[1]["c_oflag"] );
-    serial_settings.c_cflag  = std::stoi( params[1]["c_cflag"] );
-    serial_settings.c_lflag  = std::stoi( params[1]["c_lflag"] );
-    str = params[1]["c_line"];
-    serial_settings.c_line   = str[0];
-    str = params[1]["c_cc"];
-    strncpy((char *)serial_settings.c_cc,str,sizeof(serial_settings.c_cc));
-
-    serial_settings.c_ispeed = std::stoi( params[1]["c_ispeed"] );
-    serial_settings.c_ospeed = std::stoi( params[1]["c_ospeed"] );
-
-serial_settings.c_ospeed = B50;
-
-//    if(tcsetattr(fd, TCSADRAIN, (const termios*) &serial_settings)){
-    if(ioctl(fd, TCSETS, (const termios*) &serial_settings)){
-        io_error_string[fd] = "io_tcgetattr operation failed. "
-            + string(strerror(errno))
-            + " (" + std::to_string( fd ) + ")"
-        ;
-        return ret;
-    }
-
-    ret = true;
+    ret = std::string(buffer.data(), &buffer[buffer_length]);
     return ret;
 }
 

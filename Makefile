@@ -59,11 +59,9 @@ LINKER				=	g++
 #	with a list of all flags that should be passed to the linker.
 #
 
-#COMPILER_FLAGS		=	-Wall -I/usr/include/hidapi -c -O2 -std=c++11 -fpic -o
 COMPILER_FLAGS		=	-Wall -c -O2 -std=c++11 -fpic -o
 LINKER_FLAGS		=	-shared
-# LINKER_DEPENDENCIES	=	-lphpcpp -lusb-1.0 -lhidapi-hidraw
-LINKER_DEPENDENCIES	=	-lphpcpp
+# LINKER_DEPENDENCIES	=	-l -lusb-1.0 -lhidapi-hidraw
 
 #LIBS_UDEV = `pkg-config libudev --libs` -lrt
 #LIBS      = $(LIBS_UDEV)
@@ -91,13 +89,16 @@ LS					=   ls -1
 #
 
 SOURCES				=	$(wildcard *.cpp)
-OBJECTS				=	$(SOURCES:%.cpp=%.o)
+OBJECTS				= 	$(SOURCES:%.cpp=%.o)
+PHPCPPOBJECTS1		= 	$(wildcard PHP-CPP/shared/zend/*.o)
+PHPCPPOBJECTS2		= 	$(wildcard PHP-CPP/shared/common/*.o)
 
+LINKER_DEPENDENCIES =   ${PHPCPPOBJECTS1} ${PHPCPPOBJECTS2}
 
 #
 #	From here the build instructions start
 #
-all:					${OBJECTS} ${EXTENSION}
+all:					${OBJECTS} ${EXTENSION} ${LINKER_DEPENDENCIES}
 
 ${EXTENSION}:			${OBJECTS}
 						${LINKER} ${LINKER_FLAGS} -o $@ ${OBJECTS} ${LINKER_DEPENDENCIES}
@@ -105,8 +106,12 @@ ${EXTENSION}:			${OBJECTS}
 ${OBJECTS}:
 						${COMPILER} ${COMPILER_FLAGS} $@ ${@:%.o=%.cpp}
 
+${LINKER_DEPENDENCIES}:
+						cd PHP-CPP && make
+
 install:
 						./install-extension.sh ${NAME}
 
 clean:
 						${RM} ${EXTENSION} ${OBJECTS}
+						cd PHP-CPP && make clean
