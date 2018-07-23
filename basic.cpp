@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <math.h>
 
-#include <phpcpp.h>
+#include "phpcpp.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -143,7 +143,7 @@ int str2flags(string strflags){
 }
 
 
-Php::Value io_test(Php::Parameters &params){
+Php::Value io_test_flag(Php::Parameters &params){
     Php::Value ret;
     ret = str2flags(params[0]);
     return ret;

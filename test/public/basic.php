@@ -278,10 +278,14 @@ if (pcntl_fork() > 0) {
 
 } else {
     // we are the child
-    $fd = io_open($test_file,$flags);
-    usleep(1000);
-    io_close($fd);
-    @unlink($test_file);
+    try{
+        $fd = io_open($test_file,$flags);
+        usleep(1000);
+        io_close($fd);
+        @unlink($test_file);
+    } catch ( Exceptio $e ) {
+        echo "Child ended with error";
+    }
     exit;
 }
 

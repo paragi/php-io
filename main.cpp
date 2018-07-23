@@ -81,8 +81,8 @@ extern "C" {
             ,Php::ByVal("Settings", Php::Type::String)
         });
 
-        extension.add<io_test>("io_test_flag", {
-             Php::ByVal("File name",  Php::Type::String)
+        extension.add<io_test_flag>("io_test_flag", {
+             Php::ByVal("flags",  Php::Type::String)
         });
 /*
         // Hid interface

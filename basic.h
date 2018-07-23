@@ -18,4 +18,4 @@ Php::Value io_tcsetattr(Php::Parameters &params);
 Php::Value io_ioctl(Php::Parameters &params);
 Php::Value io_set_serial(Php::Parameters &params);
 
-Php::Value io_test(Php::Parameters &params);
+Php::Value io_test_flag(Php::Parameters &params);
