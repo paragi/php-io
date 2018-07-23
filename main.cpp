@@ -21,7 +21,7 @@
     set_serial fixed
 
 \*============================================================================*/
-#include <phpcpp.h>
+#include "phpcpp.h"
 #include "basic.h"
 //#include "usb.h"
 //#include "hello.h"
