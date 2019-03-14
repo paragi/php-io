@@ -25,6 +25,27 @@ Full documentation is located in the wiki: [Wiki](https://github.com/paragi/PHP-
 - io_ioctl: Driver specific control function for common interfaces.
 - io_ioctl_raw: Driver specific binary control function access. (Not in Safe_mode)
 
+## Install
+Binarys are available at https://github.com/paragi/PHP-IO-bin/tree/master
+
+If you want to complie the extension to linux:
+
+Install depandencies.
+
+Find your PHP vsersion:
+
+    php -v
+    // PHP 7.2.15.....
+
+Install PHP delevoper package:
+
+    sudo apt-get install php7.2-dev
+
+Compile extension:
+
+    make install
+
+On other systems, you have to compile the files into a PHP library file and place it in the extension directory. That is if the code is compatible, which is not guaranteed.
 
 # Changes
 * 0.6.3 File locking added.

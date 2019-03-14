@@ -59,13 +59,10 @@ LINKER				=	g++
 #	with a list of all flags that should be passed to the linker.
 #
 
-COMPILER_FLAGS		=	-Wall -c -O2 -std=c++11 -fpic -o
-LINKER_FLAGS		=	-shared
-# LINKER_DEPENDENCIES	=	-l -lusb-1.0 -lhidapi-hidraw
-
-#LIBS_UDEV = `pkg-config libudev --libs` -lrt
-#LIBS      = $(LIBS_UDEV)
-#INCLUDES ?= -I../hidapi `pkg-config libusb-1.0 --cflags`
+#COMPILER_FLAGS		=	-Wall -c -O2 -std=c++11 -fpic -o
+COMPILER_FLAGS		=	-Wall -c -O2 -fpic -o
+LINKER_FLAGS		=	-shared -lusb-1.0
+#LINKER_FLAGS		=	-shared -Wno-undef
 
 #
 #	Command to remove files, copy files and create directories.
@@ -74,10 +71,10 @@ LINKER_FLAGS		=	-shared
 #	So you can probably leave this as it is
 #
 
-RM					=	rm -f
-CP					=	cp -f
-MKDIR				=	mkdir -p
-LS					=   ls -1
+RM	= rm -f
+CP	= cp -f
+MKDIR	= mkdir -p
+LS	= ls -1
 
 
 #
@@ -88,30 +85,40 @@ LS					=   ls -1
 #	file, with the .cpp extension being replaced by .o.
 #
 
-SOURCES				=	$(wildcard *.cpp)
-OBJECTS				= 	$(SOURCES:%.cpp=%.o)
-PHPCPPOBJECTS1		= 	$(wildcard PHP-CPP/shared/zend/*.o)
-PHPCPPOBJECTS2		= 	$(wildcard PHP-CPP/shared/common/*.o)
-
-LINKER_DEPENDENCIES =   ${PHPCPPOBJECTS1} ${PHPCPPOBJECTS2}
+SOURCES	= $(wildcard *.cpp)
+OBJECTS	= $(SOURCES:%.cpp=%.o)
+PHPCPP_OBJECTS	= \
+		$(wildcard PHP-CPP/shared/zend/*.o)\
+		$(wildcard PHP-CPP/shared/common/*.o)
+PHPCPP_SOURCES	= \
+		$(wildcard PHP-CPP/shared/common/*.d)\
+		 $(wildcard PHP-CPP/shared/zend/*.d)
+PHPCPP_LIB	= PHP_CPP/libphpcpp.so.2.1.0
 
 #
 #	From here the build instructions start
 #
-all:					${OBJECTS} ${EXTENSION} ${LINKER_DEPENDENCIES}
+all:	${OBJECTS} ${PHPCPP_LIB} ${PHPCPP_OBJECTS} ${EXTENSION} ${LINKER_DEPENDENCIES}
 
-${EXTENSION}:			${OBJECTS}
-						${LINKER} ${LINKER_FLAGS} -o $@ ${OBJECTS} ${LINKER_DEPENDENCIES}
+${EXTENSION}:	${OBJECTS} ${PHPCPP_LIB} $(wildcard PHP-CPP/shared/zend/*.o) $(wildcard PHP-CPP/shared/common/*.o)
+	${LINKER} -o $@ ${OBJECTS} $(wildcard PHP-CPP/shared/zend/*.o) $(wildcard PHP-CPP/shared/common/*.o) ${LINKER_FLAGS}
 
-${OBJECTS}:
-						${COMPILER} ${COMPILER_FLAGS} $@ ${@:%.o=%.cpp}
+${OBJECTS}: ${SOURCES}
+	./update-build-number.sh
+	${COMPILER} ${COMPILER_FLAGS} $@ ${@:%.o=%.cpp}
 
-${LINKER_DEPENDENCIES}:
-						cd PHP-CPP && make
+${PHPCPP_LIB}: ${PHPCPP_OBJECTS} ${PHPCPP_SOURCES}
+	cd PHP-CPP && make
 
 install:
-						./install-extension.sh ${NAME}
+	./install-extension.sh ${NAME}
+
+test: .TEST
+
+.TEST:
+	./test/webserver
 
 clean:
-						${RM} ${EXTENSION} ${OBJECTS}
-						cd PHP-CPP && make clean
+	echo ${RM} ${EXTENSION} ${OBJECTS}
+	${RM} ${EXTENSION} ${OBJECTS}
+	#makecd PHP-CPP && make clean
