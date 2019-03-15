@@ -22,6 +22,7 @@
 
 #include "usb.h"
 #include "common.h"
+#include "usb_class_names.h"
 
 #include <libusb-1.0/libusb.h>
 
@@ -67,57 +68,6 @@ int read_sysfs_prop(char *buf, size_t size, uint8_t bnum, uint8_t pnum, char *pr
 	return n;
 }
 
-class USBClass{
-  private:
-
-    typedef struct protocol {
-      string description;
-      bool valid_for_device;
-      bool valid_for_interface;
-    };
-
-    typedef struct sub_class {
-      string description;
-      bool valid_for_device;
-      bool valid_for_interface;
-      map<int,def> protocol;
-    };
-
-    typedef struct usb_class {
-      string description;
-      bool valid_for_device;
-      bool valid_for_interface;
-      map<int,def> sub_class
-    };
-
-    constant map<int, string> device_class_string {
-      { 0x00, "See interface Descriptors" }
-     ,{ 0x01, "See interface Descriptors" }
-     ,{ 0x02, "Communications and CDC Control" }
-     ,{ 0x03, "See interface Descriptors" }
-     ,{ 0x04, "Undefined" }
-     ,{ 0x05, "See interface Descriptors" }
-     ,{ 0x06, "See interface Descriptors" }
-     ,{ 0x07, "See interface Descriptors" }
-     ,{ 0x08, "See interface Descriptors" }
-     ,{ 0x09, "Hub" } // sub 0, prot 0,1,2
-     ,{ 0x0A, "See interface Descriptors" }
-     ,{ 0x0B, "See interface Descriptors" }
-     ,{ 0x0C, "See interface Descriptors" }
-     ,{ 0x0D, "See interface Descriptors" }
-     ,{ 0x0E, "See interface Descriptors" }
-     ,{ 0x0F, "See interface Descriptors" }
-     ,{ 0x10, "See interface Descriptors" }
-     ,{ 0x11, "Billboard Device Class" }
-     ,{ 0x12, "See interface Descriptors" }
-     ,{ 0xDC, "Diagnostic Device" } // sub 1-8 prot 0-1
-     ,{ 0xE0, "See interface Descriptors" }
-     ,{ 0xEF, "Miscellaneous" } // sub 1-4 prot 1-7
-     ,{ 0xFF, "Vendor Specific" }
-     ,{ 0x100, "Undefined" }
-    };
-};
-
 
 /*============================================================================*\
   Device list classes
@@ -150,36 +100,6 @@ class USBClass{
 class Device {
   private:
   	libusb_device_descriptor descriptor_pointer;
-
-    typedef
-
-    map<int, string> device_class_string {
-      { 0x00, "See interface Descriptors" }
-     ,{ 0x01, "See interface Descriptors" }
-     ,{ 0x02, "Communications and CDC Control" }
-     ,{ 0x03, "See interface Descriptors" }
-     ,{ 0x04, "Undefined" }
-     ,{ 0x05, "See interface Descriptors" }
-     ,{ 0x06, "See interface Descriptors" }
-     ,{ 0x07, "See interface Descriptors" }
-     ,{ 0x08, "See interface Descriptors" }
-     ,{ 0x09, "Hub" } // sub 0, prot 0,1,2
-     ,{ 0x0A, "See interface Descriptors" }
-     ,{ 0x0B, "See interface Descriptors" }
-     ,{ 0x0C, "See interface Descriptors" }
-     ,{ 0x0D, "See interface Descriptors" }
-     ,{ 0x0E, "See interface Descriptors" }
-     ,{ 0x0F, "See interface Descriptors" }
-     ,{ 0x10, "See interface Descriptors" }
-     ,{ 0x11, "Billboard Device Class" }
-     ,{ 0x12, "See interface Descriptors" }
-     ,{ 0xDC, "Diagnostic Device" } // sub 1-8 prot 0-1
-     ,{ 0xE0, "See interface Descriptors" }
-     ,{ 0xEF, "Miscellaneous" } // sub 1-4 prot 1-7
-     ,{ 0xFF, "Vendor Specific" }
-     ,{ 0x100, "Undefined" }
-    };
-
 
   string get_descriptor_string(
      libusb_device_handle * dev_handle
@@ -229,6 +149,7 @@ class Device {
       string str;
       libusb_device_handle * dev_handle;
       int rc;
+      USBClassNames usb_class_string;
 
     	rc = libusb_get_device_descriptor(device, &descriptor_pointer);
     	if (rc < 0)
@@ -267,14 +188,16 @@ class Device {
 
       descriptor["deviceVersion"] = bcd_to_version(descriptor_pointer.bcdDevice);
 
-      map<int,string>::iterator it;
-      it = device_class_string.find(descriptor_pointer.bDeviceClass);
-      if( it == device_class_string.end())
-        it = device_class_string.find(0x100);
-      descriptor["deviceClass"] = it->second;
+      auto class_string = usb_class_string.get_class_text(
+         descriptor_pointer.bDeviceClass
+        ,descriptor_pointer.bDeviceSubClass
+        ,descriptor_pointer.bDeviceProtocol
+        ,false );
 
-      descriptor["subclass"]        = descriptor_pointer.bDeviceSubClass;
-      descriptor["protocol"]        = descriptor_pointer.bDeviceProtocol;
+      descriptor["deviceClass"] = class_string.class_name;
+      descriptor["subclass"]    = class_string.sub_class;
+      descriptor["protocol"]    = class_string.protocol;
+
       descriptor["maxPacketSize"]   = descriptor_pointer.bMaxPacketSize0;
       descriptor["descriptorType"]  = descriptor_pointer.bDescriptorType;
 
@@ -321,15 +244,15 @@ class Device {
 
 class Device_list {
   private:
-   	libusb_device **devices; //pointer to pointer of device, used to retrieve a list of devices
+   	libusb_device **devices;
     libusb_context *ctx = NULL; //a libusb session
-    ssize_t length; //holding number of devices in list
+    ssize_t length;
 
   public:
     Php::Value list;
 
     Device_list(libusb_context *ctx) {
-	    length = libusb_get_device_list(ctx, &devices); //get the list of devices
+	    length = libusb_get_device_list(ctx, &devices);
 	    if(length < 0)
         throw Php::Exception("io_usb unable to get a device list.");
 
@@ -337,24 +260,25 @@ class Device_list {
         auto device = new Device(devices[i]);
         int vendor = device->descriptor["vendor"];
         int product = device->descriptor["product"];
-        int serial = device->descriptor["serial"];
+        string serial = device->descriptor["serial"];
         int bus = device->descriptor["bus"];
         int device_address = device->descriptor["device"];
+        string device_class = device->descriptor["deviceClass"];
 
-        string address = to_string(vendor) + "," + to_string(product);
-        if(serial > 0)
-          address += "," + to_string(serial);
-        else
-          address += ",," + to_string(bus) + "-" + to_string(device_address);
+        string address =
+                  to_string(vendor)
+          + "," + to_string(product)
+          + "," + serial
+          + ";" + to_string(bus)
+          + "-" + to_string(device_address);
 
-        // Open devices
-        // get serial and other texts
-        list[address] = device->descriptor;
+        if(device_class != string("Hub") )
+          list[address] = device->descriptor;
 		  }
     }
 
     ~Device_list(void) {
-      libusb_free_device_list(devices, 1); //free the list and devices in it
+      libusb_free_device_list(devices, 1);
     }
 };
 

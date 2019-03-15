@@ -86,6 +86,7 @@ LS	= ls -1
 #
 
 SOURCES	= $(wildcard *.cpp)
+HEARDERS	= $(wildcard *.h)
 OBJECTS	= $(SOURCES:%.cpp=%.o)
 PHPCPP_OBJECTS	= \
 		$(wildcard PHP-CPP/shared/zend/*.o)\
@@ -101,10 +102,10 @@ PHPCPP_LIB	= PHP_CPP/libphpcpp.so.2.1.0
 all:	${OBJECTS} ${PHPCPP_LIB} ${PHPCPP_OBJECTS} ${EXTENSION} ${LINKER_DEPENDENCIES}
 
 ${EXTENSION}:	${OBJECTS} ${PHPCPP_LIB} $(wildcard PHP-CPP/shared/zend/*.o) $(wildcard PHP-CPP/shared/common/*.o)
+	./update-build-number.sh
 	${LINKER} -o $@ ${OBJECTS} $(wildcard PHP-CPP/shared/zend/*.o) $(wildcard PHP-CPP/shared/common/*.o) ${LINKER_FLAGS}
 
-${OBJECTS}: ${SOURCES}
-	./update-build-number.sh
+${OBJECTS}: ${SOURCES} ${HEARDERS}
 	${COMPILER} ${COMPILER_FLAGS} $@ ${@:%.o=%.cpp}
 
 ${PHPCPP_LIB}: ${PHPCPP_OBJECTS} ${PHPCPP_SOURCES}
