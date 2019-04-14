@@ -112,17 +112,12 @@ class USBClassNames{
 
   public:
 
-  typedef struct {
-    string class_name;
-    string sub_class;
-    string protocol;
-  } Class_descriptor ;
-
-  Class_descriptor get_class_text(
+  string get_class_text(
      int classID
     ,int sub_classID
     ,int protocolID
     ,bool is_interface );
 
 };
+
 #endif

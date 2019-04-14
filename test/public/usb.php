@@ -7,37 +7,27 @@ $test_result['ok'] = 0;
 $test_result['failed'] = 0;
 
 function validate($command,$test =""){
-    global $test_result;
+  global $test_result;
 
-    echo "$command: ";
+  echo "$command: ";
 
-    try{
-        $ret = eval("return " . $command . ";");
-    } catch (Exception $e){
-        $ret = $e->getMessage();
-    }
+  try{
+    $ret = eval("return " . $command . ";");
+  } catch (Exception $e){
+    $ret = $e->getMessage();
+  }
 
-    if( !empty($test)){
-        echo " Test: ";
-        if(is_scalar($ret))
-            eval("return $test ;");
-        else
-            echo $test;
-
-        if(eval("return $test;")){
-            echo "<span style=\"color:green\">OK: </span>\n";
-            $test_result['ok']++;
-        }else{
-            echo "<span style=\"color:red\">Failed: ($test) </span>\n";
-            $test_result['failed']++;
-        }
-    }
-    //var_dump($ret);
-
+  if(empty($test) || eval("return $test;")){
+    echo "<span style=\"color:green\">OK: </span>\n";
+    $test_result['ok']++;
+  }else{
+    echo "<span style=\"color:red\">Failed: ($test) </span>\n";
+    $test_result['failed']++;
     print_r($ret);
-    //echo "\n";
+    echo "\n";
+  }
 
-    return $ret;
+  return $ret;
 }
 
 function strToHex($string){
@@ -84,12 +74,26 @@ error_reporting( E_ALL );
 $nl = str_repeat("=",80) . "\n";
 
 // USB list
-validate("io_usb_list()",'is_array($ret)');
+print_r(validate("io_usb_list()",'is_array($ret)'));
 
+validate("io_usb_parameter_test(\"1054,16491,9J091349,3-2\",false)",'is_string($ret)');
+validate("io_usb_parameter_test(\",,,,,,,,\",false)",'$ret="-1,-1,,-1,-1"');
+validate("io_usb_parameter_test(\",,,\",false)",'$ret="-1,-1,,-1,-1"');
+validate("io_usb_parameter_test(\"\",false)",'$ret="-1,-1,,-1,-1"');
+validate("io_usb_parameter_test(\"1054,16491,,\",false)",'$ret="1054,16491,,-1,-1"');
+validate("io_usb_parameter_test(\",,9J091349,\",false)",'$ret="-1,-1,9J091349,-1,-1"');
+validate("io_usb_parameter_test(\",,9J091349\",false)",'$ret="-1,-1,9J091349,-1,-1"');
+validate("io_usb_parameter_test(\",,,3-2\",false)",'$ret="-1,-1,,3,2"');
+
+// Open
+validate("io_usb_open(\"1054,16491,9J091342,3-2\")",'$ret<0');
+$dev = validate("io_usb_open(\"1054,16491,9J091349,3-2\")",'$ret>=0');
+
+validate("io_usb_close($dev)");
 
 //====================================================================
 // Results
-printf("{$nl}Tests: %d: <span style=\"color:green\">ok: %d </span>",$test_result['ok'] + $test_result['failed'], $test_result['ok'] );
+printf("\n{$nl}Tests: %d: <span style=\"color:green\">ok: %d </span>",$test_result['ok'] + $test_result['failed'], $test_result['ok'] );
 if($test_result['failed'] > 0 )
     printf("<span style=\"color:red\">failed: %d</span>\n",$test_result['failed']);
 echo "\n";

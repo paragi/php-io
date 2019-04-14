@@ -89,6 +89,12 @@ extern "C" {
     // USB interface
     extension.add<io_usb_list>("io_usb_list", {});
 
+    extension.add<io_usb_open>("io_usb_open", {});
+    
+    extension.add<io_usb_close>("io_usb_close", {});
+
+    extension.add<io_usb_parameter_test>("io_usb_parameter_test", {});
+
 /*
     // Hid interface
     extension.add<io_hid_enumerate>("io_hid_enumerate", {

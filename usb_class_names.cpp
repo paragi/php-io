@@ -6,6 +6,9 @@
   (c) By Simon Rigét @ Paragi 2019
   License: Apache
 
+  Device/interface check droped, as som manufactors seem to ignore the
+    restrictions.
+
 \*============================================================================*/
 #include <string>
 #include <iostream>
@@ -19,40 +22,48 @@
 
 using namespace std;
 
-USBClassNames::Class_descriptor USBClassNames::get_class_text(
-     int classID
-    ,int sub_classID
-    ,int protocolID
-    ,bool is_interface ) {
+//USBClassNames::Class_descriptor USBClassNames::get_class_text(
 
+string USBClassNames::get_class_text(
+   int classID
+  ,int sub_classID
+  ,int protocolID
+  ,bool is_interface ) {
 
-    Class_descriptor ret {"undefined","undefined","undefined"};
+  string ret("empty");
+  string class_name("");
+  string sub_class("");
+  string protocol("");
 
-    do {
-      auto it_usb_class = usb_class.find(classID);
-      if( it_usb_class == usb_class.end()) break;
+  do {
+    auto it_usb_class = usb_class.find(classID);
+    if( it_usb_class == usb_class.end()) break;
 
-      if( ( is_interface && !it_usb_class->second.valid_for_interface)
-          ||
-          ( !is_interface && !it_usb_class->second.valid_for_device) )
-        break;
+    if( ( is_interface && !it_usb_class->second.valid_for_interface)
+        ||
+        ( !is_interface && !it_usb_class->second.valid_for_device) )
+      class_name = "*";
+    class_name += it_usb_class->second.description;
 
-      ret.class_name = it_usb_class->second.description;
+    auto it_sub_class = it_usb_class->second.sub_class.find(sub_classID);
+    if( it_sub_class == it_usb_class->second.sub_class.end()) break;
+    sub_class = it_sub_class->second.description;
 
-      auto it_sub_class = it_usb_class->second.sub_class.find(sub_classID);
-      if( it_sub_class == it_usb_class->second.sub_class.end()) break;
+    auto it_protocol = it_sub_class->second.protocol.find(protocolID);
+    if( it_protocol == it_sub_class->second.protocol.end()) break;
 
-      ret.sub_class = it_sub_class->second.description;
+    protocol = it_protocol->second.description;
 
-      auto it_protocol = it_sub_class->second.protocol.find(protocolID);
-      if( it_protocol == it_sub_class->second.protocol.end()) break;
+  } while(false);
 
-      ret.protocol = it_protocol->second.description;
+  ret =
+      "(" + to_string(classID)
+    + "," + to_string(sub_classID)
+    + "," + to_string(protocolID)
+    + ") "
+    + class_name
+    + ( sub_class.length() ? " " + sub_class : "" )
+    + ( protocol.length()  ? " " + protocol  : "" );
 
-    } while(false);
-
-cout<< "class ID: "<< classID << ret.class_name<<" sub: "<<sub_classID<<ret.sub_class<<" prot: "<<protocolID<<ret.protocol<<endl;
-
-
-    return ret;
-  };
+  return ret;
+};
